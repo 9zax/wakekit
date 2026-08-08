@@ -82,7 +82,7 @@ must be narrowed to scope itself to wake detection.
 - **FR-5b (wake pill = listening indicator)** — The bottom-right wake pill (orb in the `listening`
   variant + EN/TH "Listening…") stays visible for the entire dictation session; `endDictation`
   hides it. On browsers without STT it hides on the FR-4 timer as before.
-- **FR-5c (live caption toast)** — A bottom-center toast (`#stt-toast`, `lang="th"`,
+- **FR-5c (live caption toast)** — A screen-centered toast (`#stt-toast`, `lang="th"`,
   `aria-hidden` — the panel's live region already announces finals) echoes what is being said:
   interims repaint it live, and each update resets a 5 s timer after which it hides — so the final
   text lingers ~5 s after the user stops. Stop/model-switch hide it immediately via
