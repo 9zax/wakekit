@@ -331,12 +331,11 @@ try {
   const results = document.querySelector<HTMLTableSectionElement>('#results tbody')!;
   for (const m of models) {
     const tr = document.createElement('tr');
-    const trained = m.trainClips ? m.trainClips.toLocaleString() : '—';
     const cells = m.eval
-      ? [m.label, trained, String(m.eval.voices), String(m.eval.posClips),
+      ? [m.label, String(m.eval.voices), String(m.eval.posClips),
          `${(m.eval.recall * 100).toFixed(1)}%`, String(m.eval.negClips),
          m.eval.falseFiresPerMin.toFixed(2)]
-      : [m.label, trained, '⏳', '—', '—', '—', '—'];
+      : [m.label, '⏳', '—', '—', '—', '—'];
     if (!m.eval) tr.className = 'pending';
     for (const v of cells) {
       const td = document.createElement('td');

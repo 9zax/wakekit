@@ -29,8 +29,6 @@ export type WakeModel = {
   note?: string;
   /** Announced but not trained yet — pickers show it disabled, nothing tries to load it. */
   pending?: boolean;
-  /** Audio files the head was trained from (pos + hard negatives + background + traps). */
-  trainClips?: number;
   /** Held-out measurement (unseen speakers) behind `threshold` — see scripts/eval.mjs. */
   eval?: {
     /** Held-out voices never trained on. */

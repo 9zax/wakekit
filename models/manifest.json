@@ -5,8 +5,14 @@
     "lang": "th",
     "file": "lada.onnx",
     "threshold": 0.95,
-    "pending": true,
-    "note": "training now — synthetic Thai voices"
+    "note": "Held-out (4 unseen voices): recall 100% (peaks 0.953+), silent on everyday speech and the other five names. Known confusable: 'ลัดดา' can fire — v1.1 (retrained on an open voice stack) will harden this.",
+    "eval": {
+      "voices": 4,
+      "posClips": 32,
+      "negClips": 300,
+      "recall": 1.0,
+      "falseFiresPerMin": 1.05
+    }
   },
   {
     "id": "wayu",

@@ -21,3 +21,4 @@ scripts/tts.mjs
 scripts/corpus-*.sh
 .DS_Store
 scripts/head-template.onnx
+.venv-tts/
