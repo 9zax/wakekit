@@ -154,6 +154,30 @@ canvas {
 .hits li:first-child:not(.empty) { font-weight: 700; }
 .hits .empty { color: var(--faint); }
 
+/* Transcript — post-wake dictation panel, spec 2026-08-09-wake-to-thai-stt.md. Chrome/Edge only. */
+.stt-unsupported {
+  color: var(--dim); font-size: 14px; line-height: 1.6;
+  border-left: 4px solid var(--border-medium); padding-left: 14px; margin: 0.6rem 0;
+}
+.stt { border: 2px solid var(--border-subtle); padding: 12px 16px; margin: 0.6rem 0 1rem; }
+.stt-state {
+  display: inline-block; font: 700 11px var(--sans); text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--dim);
+}
+.stt-state:empty { display: none; }
+.stt-state.live { color: #15803d; } /* AA against --bg; the existing --red/#16a34a status colors are not */
+.stt-state.error { color: var(--red-active); } /* --red alone fails AA for text */
+.stt-lines {
+  list-style: none; padding: 0; margin: 0;
+  font-family: "Noto Sans Thai", var(--sans); font-size: 17px; line-height: 1.7;
+}
+.stt-lines li { padding: 10px 0; border-bottom: 1px solid var(--border-subtle); }
+.stt-lines li:last-child { border-bottom: 0; }
+.stt-lines .interim + li { font-weight: 700; } /* newest final, right after the (possibly empty) interim */
+.stt-lines .interim { color: var(--dim); }
+.stt-lines .interim:empty { display: none; }
+.stt-lines .empty { color: var(--dim); font-size: 14px; } /* --faint fails AA, use --dim */
+
 table { border-collapse: collapse; width: 100%; margin-top: 0.8rem; font-size: 14px; display: block; overflow-x: auto; }
 th, td { text-align: left; padding: 8px 14px 8px 0; border-bottom: 1px solid var(--border-subtle); vertical-align: top; }
 th {

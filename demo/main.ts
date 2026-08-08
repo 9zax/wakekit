@@ -62,6 +62,11 @@ const STRINGS = {
   idle: ['idle', 'พร้อม'],
   loading: ['loading models…', 'กำลังโหลดโมเดล…'],
   listening: ['listening', 'กำลังฟัง'],
+  sttListening: ['listening — go ahead', 'กำลังฟัง พูดได้เลย'],
+  sttNoSpeech: ["didn't catch that", 'ไม่ได้ยินที่พูด ลองใหม่อีกครั้ง'],
+  sttNetwork: ["can't reach the speech service — check your connection", 'ต่อกับบริการถอดเสียงไม่ได้ — ลองเช็กอินเทอร์เน็ต'],
+  sttMic: ['microphone blocked — allow mic access to dictate', 'ไมโครโฟนถูกบล็อก — ต้องอนุญาตให้ใช้ไมค์ก่อน'],
+  sttError: ['dictation stopped — still listening for the wake word', 'ถอดเสียงหยุดกลางคัน — แต่ยังฟังคำปลุกให้อยู่'],
 } as const;
 const L = (k: keyof typeof STRINGS) => STRINGS[k][document.documentElement.lang === 'th' ? 1 : 0];
 
@@ -119,9 +124,9 @@ function onScore(score: number) {
 }
 
 function onHit(score: number) {
-  // The ack plays a recorded voice out loud — ignore hits while it's talking,
-  // or the demo wakes itself in a loop.
-  if (curAudio && !curAudio.paused && !curAudio.ended) return;
+  // The ack plays a recorded voice out loud, and dictation listens afterward — ignore hits during
+  // either, or the demo wakes itself (or re-dictates its own speech) in a loop.
+  if ((curAudio && !curAudio.paused && !curAudio.ended) || dictating) return;
   hitMarks.push(trace.length - 1);
   if (hitCount === 0) hitsEl.innerHTML = '';
   hitCount++;
@@ -166,6 +171,7 @@ function hideWakePill() {
   cancelAnimationFrame(orbRaf);
   clearTimeout(pillTimer);
   curAudio?.pause();
+  fireArmed(); // pause() never fires 'ended' — this is the catch-all funnel for a deferred dictation start
 }
 
 function showWakePill() {
@@ -173,7 +179,7 @@ function showWakePill() {
   pill.hidden = false; // display:none → block replays the slide-in animation
   startOrb();
   clearTimeout(pillTimer);
-  pillTimer = window.setTimeout(hideWakePill, PILL_MS);
+  armDictation();
   speakAck();
 }
 
@@ -207,17 +213,179 @@ function nextVoice() {
 let curAudio: HTMLAudioElement | null = null;
 
 function speakAck() {
-  if (!voiceSet().length) return; // pill's own timer still hides it
+  if (!voiceSet().length) {
+    // no clip to wait for — hide on the usual timer, and nothing to defer dictation behind
+    pillTimer = window.setTimeout(hideWakePill, PILL_MS);
+    fireArmed();
+    return;
+  }
   const a = new Audio(nextVoice());
   a.onplay = () => {
     if (a !== curAudio) return;
-    clearTimeout(pillTimer); // pill lives as long as the voice does
+    // armed here, not before playback — a clip that's slow to start would otherwise be pause()d
+    // by a timer that began counting before it ever played, stranding both the pill and dictation
+    pillTimer = window.setTimeout(hideWakePill, PILL_MS);
     startOrb('working');
   };
   a.onended = a.onerror = () => { if (a === curAudio) hideWakePill(); };
   curAudio?.pause(); // a re-wake mid-clip starts the new ack clean
   curAudio = a;
-  a.play().catch(() => {}); // autoplay block (shouldn't happen — mic needs a gesture first)
+  a.play().catch(() => { if (a === curAudio) hideWakePill(); }); // autoplay blocked — no play/ended/error otherwise fires
+}
+
+// ---- Speech-to-text — Chrome/Edge's own SpeechRecognition, th-TH, one session per wake. Demo
+// only: unlike wake detection this sends audio to the browser's speech service, which is why
+// index.html discloses it separately and it never touches src/. spec: 2026-08-09-wake-to-thai-stt.
+const sttPrivacy = $<HTMLParagraphElement>('stt-privacy');
+const sttUnsupportedEl = $<HTMLParagraphElement>('stt-unsupported');
+const sttPanel = $<HTMLDivElement>('stt');
+const sttState = $<HTMLDivElement>('stt-state');
+const sttLinesEl = $<HTMLOListElement>('stt-lines');
+
+const sttSupported = () => !!(window.SpeechRecognition ?? window.webkitSpeechRecognition);
+
+// The one interim node: created once, reused forever. A screen reader announces aria-live
+// insertions, so recreating this node each keystroke risks a spurious announcement race — mutate
+// its text in place instead, and let CSS collapse it (:empty) when there's nothing to show.
+const interimLi = document.createElement('li');
+interimLi.className = 'interim';
+interimLi.setAttribute('aria-hidden', 'true');
+
+if (sttSupported()) {
+  sttLinesEl.prepend(interimLi);
+} else {
+  sttPrivacy.hidden = true; // no audio is ever sent here — the disclosure would be a lie
+  sttPanel.hidden = true;
+  sttUnsupportedEl.hidden = false;
+}
+
+const STT_CAP = 8; // ponytail: cap so a long demo run doesn't grow the DOM forever
+
+let rec: SpeechRecognition | null = null;
+let dictating = false; // FR-6 guard: true for the session plus a cooldown after it ends
+let armed: (() => void) | null = null; // FR-2: single-shot deferred dictation start
+let dictationDelay = 0; // FR-3: ~250ms echo guard between the ack ending and .start()
+let cooldownTimer = 0;
+let lastSttError = '';
+const finals: string[] = [];
+
+function setSttState(text: string, cls = '') {
+  sttState.textContent = text;
+  sttState.className = `stt-state ${cls}`;
+}
+
+function sttErrorLabel(code: string): string {
+  if (code === 'no-speech') return L('sttNoSpeech');
+  if (code === 'network') return L('sttNetwork');
+  if (code === 'not-allowed' || code === 'service-not-allowed') return L('sttMic');
+  return L('sttError'); // audio-capture, and anything else Chrome throws
+}
+
+function ensureSttEmptyState() {
+  const empty = sttLinesEl.querySelector('li.empty');
+  if (finals.length || interimLi.textContent) { empty?.remove(); return; }
+  if (empty) return;
+  const li = document.createElement('li');
+  li.className = 'empty';
+  li.innerHTML = '<span class="en">nothing yet — say the wake word, then keep talking</span>'
+    + '<span class="th">ยังไม่มี — พูดคำปลุก แล้วพูดต่อได้เลย</span>';
+  sttLinesEl.append(li);
+}
+
+function renderInterim(text: string) {
+  interimLi.textContent = text; // Thai interims revise earlier chars — always repaint whole, never append
+  ensureSttEmptyState();
+}
+
+function addFinal(text: string) {
+  const t = text.trim(); // trims edges only — Thai has no inter-word spaces to split on
+  if (!t) return;
+  finals.unshift(t);
+  const li = document.createElement('li');
+  li.textContent = t;
+  interimLi.after(li); // newest first, right after the (now-empty) interim slot
+  if (finals.length > STT_CAP) {
+    finals.pop();
+    sttLinesEl.lastElementChild?.remove();
+  }
+  ensureSttEmptyState();
+}
+
+function resetSttPanel() {
+  finals.length = 0;
+  interimLi.textContent = '';
+  for (const li of [...sttLinesEl.querySelectorAll('li:not(.interim)')]) li.remove();
+  ensureSttEmptyState();
+  setSttState('', '');
+}
+
+function armDictation() {
+  if (sttSupported()) armed = startDictation;
+}
+
+function fireArmed() {
+  const f = armed;
+  armed = null;
+  if (f) dictationDelay = window.setTimeout(f, 250);
+}
+
+function cancelDictationArm() {
+  armed = null;
+  clearTimeout(dictationDelay);
+}
+
+function startDictation() {
+  const SR = window.SpeechRecognition ?? window.webkitSpeechRecognition;
+  if (!SR) return;
+  dictating = true; // set before start() — Chrome takes 100-500ms to connect, a re-enterable gap otherwise
+  const r = new SR();
+  r.lang = 'th-TH';
+  r.interimResults = true;
+  r.continuous = false;
+  r.onresult = (e) => {
+    let interim = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const result = e.results[i];
+      const text = result[0]?.transcript ?? '';
+      if (result.isFinal) addFinal(text);
+      else interim += text;
+    }
+    renderInterim(interim);
+  };
+  r.onerror = (e) => { lastSttError = e.error; };
+  r.onend = () => endDictation(r);
+  rec = r;
+  setSttState(L('sttListening'), 'live');
+  try {
+    r.start();
+  } catch {
+    lastSttError = 'start-failed'; // InvalidStateError etc. — unrecognized code, sttErrorLabel falls back to the generic line
+    endDictation(r); // 'end' never fires on its own here
+  }
+}
+
+function endDictation(r: SpeechRecognition) {
+  if (r !== rec) return; // stale 'end' from a session already superseded — never tear down the new one
+  rec = null;
+  interimLi.textContent = ''; // discard any unfinished interim — Chrome guarantees a final only on the clean path
+  ensureSttEmptyState();
+  clearTimeout(cooldownTimer);
+  cooldownTimer = window.setTimeout(() => { dictating = false; }, 1500); // FR-6: head still carries ~1.3s of this speech
+  const err = lastSttError;
+  lastSttError = '';
+  setSttState(err ? sttErrorLabel(err) : '', err ? 'error' : '');
+}
+
+function abortDictation() {
+  const r = rec;
+  rec = null;
+  if (r) {
+    r.onresult = r.onerror = r.onend = null; // detach before abort() — its 'end' must not reach endDictation
+    r.abort();
+  }
+  dictating = false;
+  clearTimeout(cooldownTimer);
+  resetSttPanel();
 }
 
 // ---- Hero orb — thinking-orbs showcase, beside the "Test it live" heading. Same pure canvas
@@ -274,6 +442,8 @@ async function start() {
 }
 
 async function stop() {
+  cancelDictationArm(); // clear any pending deferred start before hideWakePill() could still fire it
+  abortDictation();
   hideWakePill();
   stopMic?.(); stopMic = null;
   kit?.dispose(); kit = null;

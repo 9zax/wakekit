@@ -48,10 +48,10 @@
         <canvas id="hero-orb" class="hero-orb" aria-hidden="true"></canvas>
       </div>
       <p class="hint">
-        <span class="en">Pick a wake word, press start, say it into your microphone. Audio never leaves
-          your machine — everything runs locally in this tab.</span>
-        <span class="th">เลือก wake word กดเริ่ม แล้วพูดใส่ไมโครโฟน เสียงไม่ถูกส่งออกจากเครื่องของคุณ —
-          ทุกอย่างรันในแท็บนี้</span>
+        <span class="en">Pick a wake word, press start, say it into your microphone. Wake-word detection
+          runs entirely in this tab — audio for that step never leaves your machine.</span>
+        <span class="th">เลือก wake word กดเริ่ม แล้วพูดใส่ไมโครโฟน การตรวจจับคำปลุกรันในแท็บนี้ทั้งหมด —
+          เสียงในขั้นตอนนั้นไม่ถูกส่งออกจากเครื่องของคุณ</span>
       </p>
 
       <div class="controls">
@@ -69,6 +69,29 @@
       <div class="trace-caption">
         <span class="en">score every 80 ms · dashed line = threshold · a crossing = detection</span>
         <span class="th">คะแนนทุก 80 ms · เส้นประ = ค่าเกณฑ์ · ข้ามเส้น = ตรวจพบ</span>
+      </div>
+
+      <!-- Transcript — post-wake dictation, Chrome/Edge only. spec: 2026-08-09-wake-to-thai-stt.md -->
+      <h3><span class="en">Transcript</span><span class="th">ข้อความที่ถอดได้</span></h3>
+      <p class="hint" id="stt-privacy">
+        <span class="en">Wake detection runs entirely on-device. This dictation step does not: while
+          it runs, your browser sends the audio to its own speech service. Nothing is stored — the
+          text below is gone when you reload.</span>
+        <span class="th">การตรวจจับคำปลุกทำงานในเครื่องคุณทั้งหมด แต่ขั้นตอนถอดเสียงเป็นข้อความไม่ใช่แบบนั้น —
+          ระหว่างที่ทำงาน เบราว์เซอร์จะส่งเสียงไปยังบริการถอดเสียงของเบราว์เซอร์เอง เราไม่ได้เก็บอะไรไว้
+          ข้อความด้านล่างจะหายไปเมื่อคุณรีโหลดหน้านี้</span>
+      </p>
+      <p class="stt-unsupported" id="stt-unsupported" hidden>
+        <span class="en">Live dictation needs the speech recognition built into the browser — Chrome
+          and Edge have it, Firefox and Safari don't. Everything above still works here: wake-word
+          detection is unaffected, only this transcript step is unavailable in this browser.</span>
+        <span class="th">การถอดเสียงสดต้องใช้ระบบรู้จำเสียงที่ติดมากับตัวเบราว์เซอร์ ซึ่งตอนนี้มีใน Chrome
+          และ Edge แต่ Firefox กับ Safari ยังไม่มี ทุกอย่างด้านบนยังใช้ได้ตามปกติ —
+          การตรวจจับคำปลุกไม่ได้รับผลกระทบ ขาดแค่ขั้นตอนถอดข้อความในเบราว์เซอร์นี้เท่านั้น</span>
+      </p>
+      <div id="stt" class="stt">
+        <div id="stt-state" class="stt-state" role="status"></div>
+        <ol id="stt-lines" class="stt-lines" lang="th" aria-live="polite" aria-relevant="additions"><li class="empty"><span class="en">nothing yet — say the wake word, then keep talking</span><span class="th">ยังไม่มี — พูดคำปลุก แล้วพูดต่อได้เลย</span></li></ol>
       </div>
 
       <h3><span class="en">Detections</span><span class="th">การตรวจพบ</span></h3>
