@@ -22,3 +22,6 @@ scripts/corpus-*.sh
 .DS_Store
 scripts/head-template.onnx
 .venv-tts/
+
+# content scripts stay local
+promote/
