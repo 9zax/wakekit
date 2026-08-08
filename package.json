@@ -1,0 +1,50 @@
+{
+  "name": "wakekit",
+  "version": "0.1.0",
+  "description": "Train a wake word for any language with TTS, run it in the browser. No GPU, no torch, no cloud.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/9zax/wakekit.git"
+  },
+  "homepage": "https://github.com/9zax/wakekit#readme",
+  "bugs": {
+    "url": "https://github.com/9zax/wakekit/issues"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src",
+    "models/manifest.json",
+    "README.md",
+    "NOTICE"
+  ],
+  "keywords": [
+    "wake-word",
+    "openwakeword",
+    "onnx",
+    "speech",
+    "browser",
+    "thai",
+    "hotword"
+  ],
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "eval": "node scripts/eval.mjs",
+    "selfcheck": "esbuild src/selfcheck.ts --bundle --format=esm --platform=node --external:onnxruntime-web > .wkc.mjs && node .wkc.mjs eval/clips; rm -f .wkc.mjs"
+  },
+  "dependencies": {
+    "highlight.js": "^11.11.1",
+    "onnxruntime-web": "^1.27.0",
+    "thinking-orbs": "^0.2.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11"
+  }
+}

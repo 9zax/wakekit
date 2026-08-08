@@ -1,0 +1,221 @@
+/* wakekit demo — VoiceBox design system (see DESIGN.md): flat, square, black/white + one red. */
+:root {
+  --black: #0a0a0a;
+  --red: #ef4444;
+  --red-active: #dc2626;
+  --bg: #fafafa;
+  --surface: #f5f5f5;
+  --raised: #e5e5e5;
+  --text: #0a0a0a;
+  --dim: #525252;
+  --faint: #a3a3a3;
+  --border-subtle: #e5e5e5;
+  --border-medium: #d4d4d4;
+  --display: "Archivo Black", Impact, "Arial Black", sans-serif;
+  --sans: "Work Sans", -apple-system, "Segoe UI", Helvetica, "Noto Sans Thai", sans-serif;
+  --mono: "Space Mono", "Courier New", Consolas, monospace;
+}
+* { box-sizing: border-box; margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 400 16px/1.7 var(--sans);
+  max-width: 940px;
+  margin: 0 auto;
+  padding: 3rem 1.25rem 4rem;
+}
+header {
+  position: relative; border-bottom: 4px solid var(--black); padding-bottom: 2rem;
+  display: flex; align-items: flex-end; gap: 2.5rem;
+}
+.header-text { flex: 1; }
+.lada { margin: 3rem 0 0; flex-shrink: 0; }
+.lada img { display: block; width: 150px; height: auto; border: 4px solid var(--black); }
+.lada figcaption {
+  margin-top: 6px; font-size: 11px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.08em; color: var(--dim);
+}
+.lada .th { font-family: "Noto Sans Thai", var(--sans); }
+
+/* EN/TH — filter chips, top-right of header */
+html[lang="th"] .en, html[lang="en"] .th { display: none; }
+.lang-toggle { position: absolute; top: 0; right: 0; display: flex; gap: 8px; }
+.lang-toggle button {
+  background: transparent; color: var(--dim); border: 2px solid var(--border-medium);
+  padding: 4px 14px; font-size: 12px; letter-spacing: 0.04em;
+}
+.lang-toggle button:hover { background: var(--surface); color: var(--text); border-color: var(--border-medium); }
+.lang-toggle button.on, .lang-toggle button.on:hover { background: var(--black); color: var(--bg); border-color: var(--black); }
+/* Archivo Black has no Thai glyphs — Thai headings fall back to heavy Noto Sans Thai */
+h1 .th, h2 .th, h3 .th { font-family: "Noto Sans Thai", var(--sans); }
+h1 .th, h2 .th { font-weight: 800; }
+header h1 {
+  font-family: var(--display); font-weight: 400;
+  font-size: clamp(38px, 8vw, 56px); line-height: 1.05; letter-spacing: -0.03em;
+  text-transform: uppercase;
+}
+.flower { font-size: 0.6em; }
+.tagline { color: var(--dim); font-size: 20px; line-height: 1.65; margin-top: 1rem; }
+.tagline em { color: var(--text); font-style: normal; border-bottom: 3px solid var(--red); }
+
+section { margin-top: 64px; }
+h2 {
+  font-family: var(--display); font-weight: 400;
+  font-size: clamp(28px, 5vw, 38px); line-height: 1.1; letter-spacing: -0.02em;
+  text-transform: uppercase; margin-bottom: 0.6rem;
+}
+h3 {
+  font-family: var(--sans); font-size: 11px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.12em; color: var(--dim);
+  margin-top: 1.5rem;
+}
+p { margin: 0.5rem 0; }
+.hint { color: var(--dim); font-size: 14px; line-height: 1.6; }
+.dl-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+a.request-btn {
+  background: var(--red); color: var(--bg); border: 2px solid var(--red);
+  padding: 10px 24px; font: 700 14px var(--sans); text-transform: uppercase; letter-spacing: 0.06em;
+  text-decoration: none; display: inline-block; margin-left: auto;
+}
+a.request-btn:hover { background: var(--black); border-color: var(--black); color: var(--bg); }
+a { color: var(--text); text-decoration-thickness: 2px; }
+a:hover { color: var(--red); }
+code { font-family: var(--mono); font-size: 0.86em; background: var(--surface); padding: 0.1em 0.35em; }
+pre { background: var(--black); color: var(--bg); border: 2px solid var(--black); padding: 1rem; overflow-x: auto; margin: 0.8rem 0; }
+pre code { background: none; padding: 0; }
+
+/* code block: flat black terminal, filename in the header bar */
+.codeblock { margin: 0.8rem 0; border: 2px solid var(--black); background: var(--black); }
+.codeblock figcaption {
+  display: flex; align-items: center; padding: 0.55rem 0.9rem;
+  background: var(--bg); border-bottom: 2px solid var(--black);
+}
+.codeblock .dot { display: none; }
+.cb-name {
+  font-family: var(--sans); font-size: 11px; font-weight: 700;
+  text-transform: lowercase; letter-spacing: 0.12em; color: var(--text);
+}
+.codeblock pre { margin: 0; border: 0; padding: 1rem 1.1rem; font-size: 14px; line-height: 1.65; }
+/* highlight.js (github-dark theme) paints tokens; keep our flat black panel */
+.hljs { background: transparent; }
+
+.controls { display: flex; flex-wrap: wrap; gap: 1.25rem; align-items: flex-end; margin: 1.5rem 0; }
+.controls label {
+  display: flex; flex-direction: column; gap: 6px;
+  font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text);
+}
+select, input[type="range"] { accent-color: var(--black); }
+select {
+  background: var(--bg); color: var(--text); border: 2px solid var(--border-medium);
+  border-radius: 0; height: 44px; padding: 8px 14px; font: 400 14px var(--sans); min-width: 220px;
+}
+select:focus { outline: none; border-color: var(--black); box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--black); }
+#thr { width: 200px; }
+#thr-val { color: var(--text); font-family: var(--mono); letter-spacing: 0; }
+button {
+  background: var(--black); color: var(--bg); border: 2px solid var(--black); border-radius: 0;
+  padding: 10px 24px; font: 700 14px var(--sans); text-transform: uppercase; letter-spacing: 0.06em;
+  cursor: pointer;
+}
+button:hover { background: var(--red); border-color: var(--red); }
+button:active { background: var(--red-active); border-color: var(--red-active); }
+button.stop { background: var(--red); border-color: var(--red); }
+button.stop:hover { background: var(--red-active); border-color: var(--red-active); }
+button:disabled { opacity: 0.35; cursor: not-allowed; }
+button:focus-visible, select:focus-visible, input:focus-visible {
+  outline: none; box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--black);
+}
+
+.status {
+  display: inline-block; font: 700 11px var(--sans); text-transform: uppercase; letter-spacing: 0.06em;
+  padding: 4px 12px; border: 2px solid var(--border-medium); color: var(--dim); margin-bottom: 0.5rem;
+}
+.status.error { background: #fef2f2; color: var(--red); border-color: var(--red); }
+.status.live { background: #f0fdf4; color: #16a34a; border-color: #16a34a; }
+
+canvas {
+  width: 100%; height: 180px; display: block;
+  background: var(--bg); border: 2px solid var(--border-subtle); border-radius: 0;
+}
+.trace-caption { color: var(--faint); font-size: 12px; font-weight: 500; letter-spacing: 0.01em; margin-top: 0.35rem; }
+
+.hits { list-style: none; padding: 0; font-family: var(--mono); font-size: 14px; }
+.hits li { padding: 14px 0; border-bottom: 1px solid var(--border-subtle); }
+.hits li:hover { background: var(--surface); }
+.hits li:first-child:not(.empty) { font-weight: 700; }
+.hits .empty { color: var(--faint); }
+
+table { border-collapse: collapse; width: 100%; margin-top: 0.8rem; font-size: 14px; }
+th, td { text-align: left; padding: 8px 14px 8px 0; border-bottom: 1px solid var(--border-subtle); vertical-align: top; }
+th {
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.12em;
+  color: var(--dim); border-bottom: 2px solid var(--black);
+}
+td:nth-child(3), td:nth-child(4) { font-family: var(--mono); font-size: 13px; white-space: nowrap; }
+td:last-child { color: var(--dim); }
+
+/* Wake pill — ported from stt-meeting-product's OrbOverlay (slide-in + glow pulse + listening orb),
+   reskinned to this page's flat/square/red system. Decorative: aria-hidden, click-through. */
+.wake-pill[hidden] { display: none; }
+.wake-pill {
+  position: fixed; right: 16px; bottom: 16px; z-index: 60; pointer-events: none;
+  display: flex; align-items: center; gap: 14px;
+  padding: 14px 22px 14px 16px;
+  background: var(--bg); border: 2px solid var(--red); color: var(--text);
+  font: 700 16px var(--sans); letter-spacing: 0.04em; white-space: nowrap;
+  animation: wake-in 0.3s cubic-bezier(.16,1,.3,1) both, wake-glow 1.8s ease-in-out infinite;
+}
+.wake-pill canvas { width: 64px; height: 64px; display: block; }
+.wake-pill .score { font-family: var(--mono); font-weight: 400; color: var(--dim); }
+@keyframes wake-in { from { opacity: 0; transform: translateY(6px); } }
+.wake-pill .listen { color: var(--red); }
+.wake-pill .listen::after {
+  content: '...';
+  display: inline-block; width: 0; overflow: hidden; vertical-align: bottom;
+  animation: wake-dots 1.2s steps(4, jump-none) infinite;
+}
+@keyframes wake-dots { to { width: 1.2em; } }
+@keyframes wake-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgb(239 68 68 / 0.45); }
+  50%      { box-shadow: 0 0 0 6px rgb(239 68 68 / 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wake-pill { animation: none; }
+  .wake-pill .listen::after { animation: none; width: 1.2em; }
+}
+
+/* Hero orb — thinking-orbs showcase, beside the "Test it live" heading; rainbow ink painted in JS */
+.test-head { display: flex; align-items: center; gap: 1.5rem; }
+.test-head h2 {
+  margin-bottom: 0;
+  /* light-sweep loop: a bright band fades across the text, then the text sits dark until the next pass */
+  background: linear-gradient(110deg, var(--text) 42%, var(--faint) 50%, var(--text) 58%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  animation: head-shine 5s linear infinite;
+}
+@keyframes head-shine { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .test-head h2 { animation: none; color: var(--text); } }
+canvas.hero-orb {
+  flex-shrink: 0; display: block;
+  width: 100px; height: 100px;
+  background: transparent; border: 0;
+}
+
+.steps li { margin: 0.5rem 0; }
+footer { margin-top: 96px; border-top: 4px solid var(--black); padding-top: 1rem; color: var(--dim); font-size: 12px; }
+
+@media (max-width: 640px) {
+  section { margin-top: 48px; }
+  .lada { display: none; }
+  .test-head { gap: 1rem; }
+  .controls { gap: 0.8rem; }
+  #thr { width: 150px; }
+  #zoo td:last-child { display: none; }
+  #zoo th:last-child { display: none; }
+}
+
+/* pending wake words — announced in the zoo, not selectable yet */
+table tr.pending td { color: #a3a3a3; }
+.tag-pending { font-family: 'Space Mono', monospace; font-size: 12px; color: #ca8a04; white-space: nowrap; }
+.tag-ready { font-family: 'Space Mono', monospace; font-size: 12px; color: #16a34a; white-space: nowrap; }

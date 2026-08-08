@@ -1,0 +1,23 @@
+node_modules/
+dist/
+.wkc.mjs
+
+# generated corpora / features — regenerate with scripts/ (see docs/training.md)
+eval/clips/
+corpus/
+features/
+
+# real-voice captures must never be committed
+**/captures/
+.vercel
+
+.env
+corpus5/
+features5/
+eval5/
+.claude
+# voice-generation scripts stay local — never committed
+scripts/tts.mjs
+scripts/corpus-*.sh
+.DS_Store
+scripts/head-template.onnx

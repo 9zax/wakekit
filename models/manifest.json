@@ -1,0 +1,56 @@
+[
+  {
+    "id": "lada",
+    "label": "ละดา (Thai)",
+    "lang": "th",
+    "file": "lada.onnx",
+    "threshold": 0.95,
+    "pending": true,
+    "note": "training now — synthetic Thai voices"
+  },
+  {
+    "id": "wayu",
+    "label": "วายุ (Thai)",
+    "lang": "th",
+    "file": "wayu.onnx",
+    "threshold": 0.95,
+    "pending": true,
+    "note": "corpus ready — training queued"
+  },
+  {
+    "id": "thapthim",
+    "label": "ทับทิม (Thai)",
+    "lang": "th",
+    "file": "thapthim.onnx",
+    "threshold": 0.95,
+    "pending": true,
+    "note": "corpus ready — training queued"
+  },
+  {
+    "id": "irin",
+    "label": "ไอริน (Thai)",
+    "lang": "th",
+    "file": "irin.onnx",
+    "threshold": 0.95,
+    "pending": true,
+    "note": "training queued"
+  },
+  {
+    "id": "anda",
+    "label": "อันดา (Thai)",
+    "lang": "th",
+    "file": "anda.onnx",
+    "threshold": 0.95,
+    "pending": true,
+    "note": "training queued"
+  },
+  {
+    "id": "nara",
+    "label": "นารา (Thai)",
+    "lang": "th",
+    "file": "nara.onnx",
+    "threshold": 0.95,
+    "pending": true,
+    "note": "training queued"
+  }
+]

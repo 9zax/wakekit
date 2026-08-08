@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>wakekit — wake words for any language, in the browser</title>
+  <meta name="description" content="Train a wake word for any language with TTS, run it in the browser. No GPU, no torch, no cloud." />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌼</text></svg>" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Work+Sans:wght@400;500;600;700&family=Space+Mono&family=Noto+Sans+Thai:wght@400;700;800&display=swap" />
+  <link rel="stylesheet" href="/demo/style.css" />
+</head>
+<body>
+  <header>
+    <div class="lang-toggle" role="group" aria-label="Language">
+      <button data-lang="en" type="button">EN</button>
+      <button data-lang="th" type="button">TH</button>
+    </div>
+    <div class="header-text">
+      <h1>wakekit <span class="flower">🌼</span></h1>
+      <p class="tagline">
+        <span class="en">Train a wake word for <em>any language</em> with TTS, run it in the browser.<br />
+          No GPU, no torch, no cloud — three small ONNX models on a worker thread.</span>
+        <span class="th">เทรน wake word <em>ภาษาไหนก็ได้</em> ด้วย TTS แล้วรันในเบราว์เซอร์<br />
+          ไม่ต้องมี GPU ไม่ต้องมี torch ไม่ต้องพึ่งคลาวด์ — โมเดล ONNX เล็ก ๆ สามตัวบน worker thread</span>
+      </p>
+    </div>
+    <figure class="lada">
+      <img src="/demo/lada.jpg" alt="ละดา" width="480" height="600" />
+      <figcaption><span class="en">ละดา — wakekit</span><span class="th">ละดา — wake word</span></figcaption>
+    </figure>
+  </header>
+
+  <main>
+    <!-- ─────────────── live test ─────────────── -->
+    <section id="test">
+      <div class="test-head">
+        <h2><span class="en">Test it live</span><span class="th">ทดลองเลย</span></h2>
+        <canvas id="hero-orb" class="hero-orb" aria-hidden="true"></canvas>
+      </div>
+      <p class="hint">
+        <span class="en">Pick a wake word, press start, say it into your microphone. Audio never leaves
+          your machine — everything runs locally in this tab.</span>
+        <span class="th">เลือก wake word กดเริ่ม แล้วพูดใส่ไมโครโฟน เสียงไม่ถูกส่งออกจากเครื่องของคุณ —
+          ทุกอย่างรันในแท็บนี้</span>
+      </p>
+
+      <div class="controls">
+        <label><span class="en">Wake word</span><span class="th">คำปลุก</span>
+          <select id="model"></select>
+        </label>
+        <label><span><span class="en">Threshold</span><span class="th">ค่าเกณฑ์</span> <span id="thr-val"></span></span>
+          <input id="thr" type="range" min="0.05" max="0.995" step="0.005" />
+        </label>
+        <button id="toggle">▶ Start listening</button>
+      </div>
+
+      <div id="status" class="status">idle</div>
+      <canvas id="trace" width="900" height="180"></canvas>
+      <div class="trace-caption">
+        <span class="en">score every 80 ms · dashed line = threshold · a crossing = detection</span>
+        <span class="th">คะแนนทุก 80 ms · เส้นประ = ค่าเกณฑ์ · ข้ามเส้น = ตรวจพบ</span>
+      </div>
+
+      <h3><span class="en">Detections</span><span class="th">การตรวจพบ</span></h3>
+      <ol id="hits" class="hits"><li class="empty"><span class="en">none yet</span><span class="th">ยังไม่มี</span></li></ol>
+    </section>
+
+    <!-- ─────────────── model zoo ─────────────── -->
+    <section id="models-section">
+      <h2><span class="en">Wake words</span><span class="th">คำปลุกทั้งหมด</span></h2>
+      <p>
+        <span class="en">One repo, many wake words. The mel-spectrogram and speech-embedding models are frozen and
+          shared; each wake word is a single trained head (~0.4 MB). Adding one — <b>อีดี</b>,
+          <b>jarvis</b>, yours — is a <code>.onnx</code> file plus one entry in
+          <code>models/manifest.json</code>. No code change.</span>
+        <span class="th">รีโปเดียว หลาย wake word — โมเดล mel-spectrogram และ speech-embedding ถูก freeze
+          และใช้ร่วมกัน แต่ละ wake word คือ head ที่เทรนแล้วหนึ่งตัว (~0.4 MB) การเพิ่มคำใหม่ — <b>อีดี</b>,
+          <b>jarvis</b>, คำของคุณเอง — คือไฟล์ <code>.onnx</code> หนึ่งไฟล์กับหนึ่งรายการใน
+          <code>models/manifest.json</code> ไม่ต้องแก้โค้ด</span>
+      </p>
+      <table id="zoo">
+        <thead><tr><th>label</th><th><span class="en">status</span><span class="th">สถานะ</span></th><th>lang</th><th>file</th><th>threshold</th><th>notes</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <p class="dl-row">
+        <a class="gh-release" href="https://github.com/9zax/wakekit/releases/latest">⬇
+          <span class="en">All models — GitHub Release (.onnx + manifest)</span>
+          <span class="th">โมเดลทั้งหมด — GitHub Release (.onnx + manifest)</span></a>
+        <a class="request-btn" href="https://docs.google.com/forms/d/e/1FAIpQLSfDytDdz_cgOar4dzx0ca0G244PYN-YE6Kw4R2EPlFNg34mRw/viewform" target="_blank" rel="noopener">🌼
+          <span class="en">Request a wake word</span>
+          <span class="th">ขอเสนอชื่อ AI ที่อยากได้</span></a>
+      </p>
+
+      <h3><span class="en">Test results</span><span class="th">ผลทดสอบ</span></h3>
+      <p class="hint">
+        <span class="en">Measured on held-out TTS speakers the model never trained on
+          (<code>scripts/eval.mjs</code>, at each model's shipped threshold). TTS numbers, not a
+          real room — a noisy far-field mic will do worse.</span>
+        <span class="th">วัดบนเสียง TTS ที่โมเดลไม่เคยเห็นตอนเทรน
+          (<code>scripts/eval.mjs</code> ที่ค่าเกณฑ์ของแต่ละโมเดล) เป็นตัวเลขจาก TTS ไม่ใช่ห้องจริง —
+          ไมค์ไกล ๆ ในห้องที่มีเสียงรบกวนจะได้ต่ำกว่านี้</span>
+      </p>
+      <table id="results">
+        <thead><tr>
+          <th><span class="en">wake word</span><span class="th">คำปลุก</span></th>
+          <th><span class="en">trained from (clips)</span><span class="th">เทรนจาก (ไฟล์เสียง)</span></th>
+          <th><span class="en">held-out voices</span><span class="th">เสียงที่กันไว้</span></th>
+          <th><span class="en">pos clips</span><span class="th">คลิปคำปลุก</span></th>
+          <th>recall</th>
+          <th><span class="en">neg clips</span><span class="th">คลิปลวง</span></th>
+          <th><span class="en">false fires/min</span><span class="th">ปลุกพลาด/นาที</span></th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <!-- ─────────────── usage ─────────────── -->
+    <section id="usage">
+      <h2><span class="en">Use the library</span><span class="th">ใช้งานไลบรารี</span></h2>
+      <p>
+        <span class="en">Copy <code>models/</code> into your static dir (plus the two
+          <code>ort-wasm-simd-threaded.*</code> files from <code>onnxruntime-web/dist</code>), then:</span>
+        <span class="th">คัดลอก <code>models/</code> ไปไว้ใน static dir ของคุณ (พร้อมไฟล์
+          <code>ort-wasm-simd-threaded.*</code> สองไฟล์จาก <code>onnxruntime-web/dist</code>) แล้ว:</span>
+      </p>
+      <figure class="codeblock">
+        <figcaption><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="cb-name">app.ts</span></figcaption>
+        <pre><code class="language-typescript">import { WakeKit, listenMic, loadManifest } from 'wakekit';
+
+const models = await loadManifest('/models/');
+
+const kit = await WakeKit.load({
+  model: models.find((m) =&gt; m.id === 'lada'),
+  base: '/models/',            // where the .onnx files are served
+  onHit: (score) =&gt; {
+    console.log('wake word heard!', score);
+    // answer with the browser's own voice — no TTS server needed
+    const u = new SpeechSynthesisUtterance('ค่ะ ว่ามาได้เลยค่ะ');
+    u.lang = 'th-TH';
+    speechSynthesis.speak(u);
+  },
+});
+
+const stop = await listenMic(kit);   // mic → detector, all local
+// ...later: stop(); kit.dispose();</code></pre>
+      </figure>
+      <p class="dl-row">
+        <button id="dl-example" type="button">⬇ <span class="en">Download example (.zip)</span><span class="th">ดาวน์โหลดตัวอย่าง (.zip)</span></button>
+        <span class="hint"><span class="en">index.html + models/ + prebuilt wakekit.js — no npm, just serve the folder (<code>python3 -m http.server</code>)</span><span class="th">index.html + models/ + wakekit.js สำเร็จรูป — ไม่ต้อง npm แค่เสิร์ฟโฟลเดอร์ (<code>python3 -m http.server</code>)</span></span>
+      </p>
+      <p>
+        <span class="en">Not using a mic helper? Feed audio yourself from any source —
+          <code>kit.push(float32Samples, sampleRate)</code> resamples to the 16 kHz the models expect.</span>
+        <span class="th">ไม่ใช้ mic helper? ป้อนเสียงเองจากแหล่งไหนก็ได้ —
+          <code>kit.push(float32Samples, sampleRate)</code> จะ resample เป็น 16 kHz ตามที่โมเดลต้องการ</span>
+      </p>
+    </section>
+
+    <!-- ─────────────── other languages ─────────────── -->
+    <section id="ports">
+      <h2><span class="en">Beyond the browser</span><span class="th">นอกเบราว์เซอร์</span></h2>
+      <p>
+        <span class="en">The three models are plain ONNX — the same files run under any ONNX Runtime binding.
+          Each example below is a direct port of the browser worker: raw 16 kHz audio in, wake-word
+          hits out.</span>
+        <span class="th">โมเดลทั้งสามคือ ONNX ธรรมดา — ไฟล์เดียวกันรันได้บน ONNX Runtime binding ใดก็ได้
+          ตัวอย่างด้านล่างคือ port ตรง ๆ ของ browser worker: เสียงดิบ 16 kHz เข้า, การตรวจพบ wake word ออก</span>
+      </p>
+      <div class="controls">
+        <label><span class="en">Language</span><span class="th">ภาษาโปรแกรม</span>
+          <select id="port-lang"></select>
+        </label>
+      </div>
+      <figure class="codeblock">
+        <figcaption><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="cb-name" id="port-name"></span></figcaption>
+        <pre><code id="port-code"></code></pre>
+      </figure>
+      <p>
+        <span class="en">Pipeline spec, install lines, and the porting checklist: <a
+            href="https://github.com/9zax/wakekit/blob/main/docs/other-languages.md">docs/other-languages.md</a>.</span>
+        <span class="th">สเปกไปป์ไลน์ คำสั่งติดตั้ง และเช็กลิสต์การ port: <a
+            href="https://github.com/9zax/wakekit/blob/main/docs/other-languages.md">docs/other-languages.md</a></span>
+      </p>
+    </section>
+
+    <!-- ─────────────── training ─────────────── -->
+    <section id="train">
+      <h2><span class="en">Train your own — any language</span><span class="th">เทรนเอง — ได้ทุกภาษา</span></h2>
+      <p>
+        <span class="en">openWakeWord's own sample generator ships one English TTS checkpoint, which is why upstream
+          calls itself English-only. wakekit sidesteps that: <b>any TTS that can say your wake word can
+          build your corpus</b>. The Thai "ละดา" heads above were trained this way — ~1000 short TTS
+          clips, a numpy-only trainer (~110k params), no GPU.</span>
+        <span class="th">sample generator ของ openWakeWord มาพร้อม TTS checkpoint ภาษาอังกฤษตัวเดียว
+          ต้นทางจึงบอกว่ารองรับแค่ภาษาอังกฤษ wakekit เลี่ยงข้อจำกัดนี้: <b>TTS อะไรก็ได้ที่พูดคำปลุกของคุณได้
+          ก็สร้างคอร์ปัสได้</b> head ภาษาไทย "ละดา" ด้านบนก็เทรนแบบนี้ — คลิป TTS สั้น ๆ ~1000 คลิป,
+          เทรนเนอร์ numpy ล้วน (~110k พารามิเตอร์), ไม่ใช้ GPU</span>
+      </p>
+      <ol class="steps">
+        <li><b>Corpus</b> —
+          <span class="en">copy <code>scripts/corpus-lada.sh</code>, swap in your wake word, its
+            <em>rhyming trap words</em> (the decisive negatives) and everyday sentences in your
+            language, and point it at your TTS.</span>
+          <span class="th">คัดลอก <code>scripts/corpus-lada.sh</code> เปลี่ยนเป็นคำปลุกของคุณ ใส่
+            <em>คำกับดักที่เสียงคล้ายกัน</em> (เนกาทีฟตัวชี้ขาด) กับประโยคใช้ทั่วไปในภาษาของคุณ
+            แล้วชี้ไปที่ TTS ของคุณ</span></li>
+        <li><b>Featurize</b> — <code>node scripts/featurize.mjs corpus/ features/</code></li>
+        <li><b>Train</b> — <code>python3 scripts/train.py features/ models/yourword.onnx</code></li>
+        <li><b>Measure</b> — <code>node scripts/eval.mjs eval/clips models/yourword.onnx 0.95</code>
+          <span class="en">— recall and false-fires-per-minute on held-out voices, then add the entry to
+            <code>manifest.json</code> with the threshold <em>you measured</em>.</span>
+          <span class="th">— วัด recall และ false-fires-per-minute บนเสียง held-out แล้วเพิ่มรายการใน
+            <code>manifest.json</code> ด้วยค่าเกณฑ์<em>ที่คุณวัดได้จริง</em></span></li>
+      </ol>
+      <p>
+        <span class="en">Full guide with the ละดา case study: <a
+            href="https://github.com/9zax/wakekit/blob/main/docs/training.md">docs/training.md</a>.
+          No TTS? Train from your own recordings (.wav / .mp3): <a
+            href="https://github.com/9zax/wakekit/blob/main/docs/train-from-recordings.md">docs/train-from-recordings.md</a>.</span>
+        <span class="th">คู่มือฉบับเต็มพร้อมกรณีศึกษา "ละดา": <a
+            href="https://github.com/9zax/wakekit/blob/main/docs/training.md">docs/training.md</a>
+          ไม่มี TTS? เทรนจากเสียงที่อัดเอง (.wav / .mp3): <a
+            href="https://github.com/9zax/wakekit/blob/main/docs/train-from-recordings.md">docs/train-from-recordings.md</a></span>
+      </p>
+    </section>
+  </main>
+
+  <footer>
+    <p>
+      <span class="en"><a href="https://github.com/9zax/wakekit/blob/main/LICENSE">Apache-2.0</a> ·
+        open source: <a href="https://github.com/9zax/wakekit">github.com/9zax/wakekit</a> ·
+        built on <a href="https://github.com/dscripka/openWakeWord">openWakeWord</a>
+        by David Scripka (frozen mel-spectrogram + Google speech-embedding models, Apache-2.0) and
+        <a href="https://onnxruntime.ai/">ONNX Runtime Web</a> (MIT).
+        Demo uses <a href="https://highlightjs.org/">highlight.js</a> (BSD-3-Clause) and
+        <a href="https://www.npmjs.com/package/thinking-orbs">thinking-orbs</a> (MIT).
+        Full attributions: <a href="https://github.com/9zax/wakekit/blob/main/NOTICE">NOTICE</a>.</span>
+      <span class="th"><a href="https://github.com/9zax/wakekit/blob/main/LICENSE">Apache-2.0</a> ·
+        โอเพนซอร์ส: <a href="https://github.com/9zax/wakekit">github.com/9zax/wakekit</a> ·
+        สร้างบน <a href="https://github.com/dscripka/openWakeWord">openWakeWord</a>
+        โดย David Scripka (โมเดล mel-spectrogram + Google speech-embedding ที่ freeze ไว้, Apache-2.0) และ
+        <a href="https://onnxruntime.ai/">ONNX Runtime Web</a> (MIT)
+        เดโมใช้ <a href="https://highlightjs.org/">highlight.js</a> (BSD-3-Clause) กับ
+        <a href="https://www.npmjs.com/package/thinking-orbs">thinking-orbs</a> (MIT)
+        เครดิตฉบับเต็ม: <a href="https://github.com/9zax/wakekit/blob/main/NOTICE">NOTICE</a></span>
+    </p>
+  </footer>
+
+  <!-- Wake pill — bottom-right toast when a wake word fires (ported from stt-meeting-product). -->
+  <div id="wake-pill" class="wake-pill" hidden aria-hidden="true">
+    <canvas id="wake-orb"></canvas>
+    <span id="wake-pill-text"></span>
+    <span class="listen">Listening</span>
+    <span id="wake-pill-score" class="score"></span>
+  </div>
+
+  <script type="module" src="/demo/main.ts"></script>
+</body>
+</html>
