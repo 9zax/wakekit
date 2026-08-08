@@ -1,6 +1,6 @@
 {
   "name": "wakekit",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Train a wake word for any language with TTS, run it in the browser. No GPU, no torch, no cloud.",
   "type": "module",
   "license": "Apache-2.0",
