@@ -19,9 +19,13 @@ eval5/
 # voice-generation scripts stay local — never committed
 scripts/tts.mjs
 scripts/corpus-*.sh
+scripts/f5-server.py
 .DS_Store
 scripts/head-template.onnx
 .venv-tts/
 
 # content scripts stay local
 promote/
+.venv-f5/
+refs/
+.f5/

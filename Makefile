@@ -55,6 +55,11 @@ dev:
 build:
 	npm run build
 
+## f5: clone-your-voice corpus page at http://127.0.0.1:7861 (local-only tooling, not in the repo)
+f5:
+	@test -x .venv-f5/bin/python || { echo "no .venv-f5 — local F5 setup required"; exit 1; }
+	.venv-f5/bin/python scripts/f5-server.py
+
 # The worked example, end to end. eval/clips is the held-out set the corpus script writes —
 # 4 voices never seen in training, so the numbers mean "unseen speaker", not "rerun".
 train-lada: corpus
