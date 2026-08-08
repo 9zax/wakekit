@@ -33,7 +33,21 @@ models shared by every wake word; each word is one trained ~0.4 MB head + one ma
 - `corpus5/ features5/ eval5/` are generated and gitignored; hold out whole SPEAKERS, not clips.
 - Cross-name traps are free: hardlink the other words' `pos` clips into a word's `hard/` before
   featurizing (`trap_<word>_` prefix) — a multi-model deploy must not fire on a sibling's name.
+  Also hardlink `corpus5/shared/corpus/neg` into the word's `neg/`. Retraining ANY head? Re-link
+  its traps first — siblings' corpora grow (e.g. clone-voice clips) and stale traps miss them.
 - Training is numpy-only (`train.py`); ONNX export reuses `--base` as a template. No torch.
+- The eval suite `eval/clips/<id>/` is built from `holdout/`: own `pos/*` → `pos_<name>.wav`; own
+  `hard/*`, shared `holdout/neg/*`, and every sibling's holdout `pos/*` (`neg_trap_<sib>_` prefix)
+  → `neg_<name>.wav`.
+
+## Known confusables (the lada precedent)
+
+A rhyme that still fires on held-out voices after training does NOT block shipping, if recall is
+100% and traps are silent: name it in the manifest `note` ("Known confusables: '…' can fire"),
+then delete that word's clips (every voice/lang/speed variant) from `eval/clips/<id>/` so
+selfcheck guards what the model actually guarantees. The manifest `eval` numbers stay honest:
+they are measured on the FULL held-out suite (the `neg overall` line of eval.mjs), confusables
+included — the note and the numbers must agree.
 
 ## Tests
 
@@ -41,3 +55,8 @@ models shared by every wake word; each word is one trained ~0.4 MB head + one ma
   `eval/clips/<id>/` (`pos_*` must fire, `neg_*` — rhymes, meeting speech, other wake words'
   positives — must not). Pending heads are skipped. Keep suites when adding a model.
 - `npx tsc --noEmit` before shipping demo/src changes.
+
+## Ship
+
+Push to main, then `vercel --prod --yes` (project is linked; `.vercelignore` keeps corpora and
+scripts out). Order is fixed: selfcheck green → commit → push → deploy.
