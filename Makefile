@@ -24,7 +24,7 @@ HEAD          ?= models/lada.onnx
 THRESHOLD     ?= 0.95
 NEG_WEIGHT    ?= 20
 
-.PHONY: help corpus features head eval selfcheck dev build train-lada
+.PHONY: help corpus features head eval selfcheck dev build train-lada f5 f5-setup
 
 help:
 	@awk '/^# {3}|^#$$|^# [0-9T]/{sub(/^# ?/,"");print}' Makefile
@@ -57,8 +57,12 @@ build:
 
 ## f5: clone-your-voice corpus page at http://127.0.0.1:7861 (local-only tooling, not in the repo)
 f5:
-	@test -x .venv-f5/bin/python || { echo "no .venv-f5 — local F5 setup required"; exit 1; }
+	@test -x .venv-f5/bin/python || bash scripts/f5-setup.sh
 	.venv-f5/bin/python scripts/f5-server.py
+
+## f5-setup: bootstrap the clone-voice tooling on a fresh machine (venv, deps, checkpoint, alias)
+f5-setup:
+	bash scripts/f5-setup.sh
 
 # The worked example, end to end. eval/clips is the held-out set the corpus script writes —
 # 4 voices never seen in training, so the numbers mean "unseen speaker", not "rerun".

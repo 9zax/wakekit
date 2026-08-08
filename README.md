@@ -21,7 +21,7 @@ whole pipeline:
   CPU, minutes), and an eval harness that reports the two numbers that matter: recall and false
   fires per minute.
 - **Model zoo** — every wake word is one ~0.4 MB head + one manifest entry. Shipped today:
-  **ละดา** (Thai), trained end-to-end with this repo. Next: อีดี, jarvis, yours.
+  **ละดา** (Thai) and **จาร์วิส** (jarvis, Thai), trained end-to-end with this repo. Next: อีดี, yours.
 
 ## Try it
 
@@ -76,6 +76,7 @@ your own logic.
 | id | label | lang | threshold | trained on |
 |---|---|---|---|---|
 | `lada` | ละดา | th | 0.95 | synthetic Thai voices — held-out: recall 100%, 0 false fires |
+| `jarvis` | จาร์วิส | th | 0.95 | synthetic Thai voices — held-out: recall 100%, 0 false fires |
 
 Adding one is a `.onnx` file plus one `models/manifest.json` entry — the demo and the library pick
 it up with no code change. **The threshold travels with the model**, because each head puts its
@@ -126,4 +127,4 @@ including commercially.
 | [ONNX Runtime Web](https://onnxruntime.ai/) — wasm inference | Microsoft | MIT |
 | [highlight.js](https://highlightjs.org/) — demo code highlighting | highlight.js contributors | BSD-3-Clause |
 | [thinking-orbs](https://www.npmjs.com/package/thinking-orbs) — demo wake-pill orb | | MIT |
-| Trained heads (`models/lada*.onnx`) — synthetic speech (TTS) | wakekit | Apache-2.0 |
+| Trained heads (`models/<word>.onnx`) — synthetic speech (TTS) | wakekit | Apache-2.0 |

@@ -7,6 +7,8 @@ import { WakeKit, listenMic, loadManifest, type WakeModel } from '../src/index';
 const BASE = new URL('.', location.href).pathname;
 import { MODE_DRAWS, resolvePreset } from 'thinking-orbs';
 import { downloadExample } from './example-zip';
+import jarvisJpg from './jarvis.jpg';
+import ladaJpg from './lada.jpg';
 import portsMd from '../docs/other-languages.md?raw';
 import hljs from 'highlight.js/lib/core';
 import langTs from 'highlight.js/lib/languages/typescript';
@@ -179,15 +181,21 @@ function showWakePill() {
 // Vite, since publicDir is 'models'). While it talks the orb flips to the lib's 'working'
 // variant and the pill stays up until the clip ends. Shuffle-bag draw: every clip plays once
 // before any repeats, and the same clip never plays twice in a row.
-const VOICE_URLS = Object.values(
-  import.meta.glob<string>('../static/voices/*.mp3', { eager: true, query: '?url', import: 'default' }),
-);
+// One clip set per persona gender (manifest `gender`) — จาร์วิส answers in a male voice, ละดา
+// in a female one. Unknown/missing gender falls back to female, the original set.
+const VOICE_SETS: Record<string, string[]> = {
+  male: Object.values(import.meta.glob<string>('../static/voices/male/*.mp3', { eager: true, query: '?url', import: 'default' })),
+  female: Object.values(import.meta.glob<string>('../static/voices/female/*.mp3', { eager: true, query: '?url', import: 'default' })),
+};
+const voiceSet = () => VOICE_SETS[current()?.gender ?? 'female'] ?? VOICE_SETS.female;
 let voiceBag: string[] = [];
+let bagSet: string[] = [];
 let lastVoice = '';
 
 function nextVoice() {
+  if (bagSet !== voiceSet()) { bagSet = voiceSet(); voiceBag = []; } // model switch resets the bag
   if (!voiceBag.length) {
-    voiceBag = [...VOICE_URLS].sort(() => Math.random() - 0.5); // ponytail: biased shuffle, fine for a handful of clips
+    voiceBag = [...bagSet].sort(() => Math.random() - 0.5); // ponytail: biased shuffle, fine for a handful of clips
     // pop() draws from the end — make sure the new bag doesn't open with the clip just played
     if (voiceBag.length > 1 && voiceBag[voiceBag.length - 1] === lastVoice)
       [voiceBag[0], voiceBag[voiceBag.length - 1]] = [voiceBag[voiceBag.length - 1], voiceBag[0]];
@@ -199,7 +207,7 @@ function nextVoice() {
 let curAudio: HTMLAudioElement | null = null;
 
 function speakAck() {
-  if (!VOICE_URLS.length) return; // pill's own timer still hides it
+  if (!voiceSet().length) return; // pill's own timer still hides it
   const a = new Audio(nextVoice());
   a.onplay = () => {
     if (a !== curAudio) return;
@@ -411,3 +419,29 @@ if (ports.length) showPort();
 // static code blocks (the app.ts usage example)
 for (const el of document.querySelectorAll<HTMLElement>('pre code[class*="language-"]:not(#port-code)'))
   hljs.highlightElement(el);
+
+// ---- Hero portrait — จาร์วิส first, then ละดา, crossfading in a loop.
+const HERO = [
+  { src: jarvisJpg, name: 'จาร์วิส' },
+  { src: ladaJpg, name: 'ละดา' },
+];
+{
+  const fig = document.querySelector<HTMLElement>('figure.lada');
+  const img = fig?.querySelector('img');
+  if (fig && img) {
+    const capEn = fig.querySelector('.en')!;
+    const capTh = fig.querySelector('.th')!;
+    let i = 0;
+    const show = (h: (typeof HERO)[number]) => {
+      img.src = h.src;
+      img.alt = h.name;
+      capEn.textContent = `${h.name} — wakekit`;
+      capTh.textContent = `${h.name} — wake word`;
+    };
+    show(HERO[0]); // index.html ships จาร์วิส too — this swaps in the hashed bundle URL
+    setInterval(() => {
+      img.style.opacity = '0';
+      setTimeout(() => { i = (i + 1) % HERO.length; show(HERO[i]); img.style.opacity = '1'; }, 500);
+    }, 6000);
+  }
+}

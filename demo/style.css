@@ -29,8 +29,17 @@ header {
   display: flex; align-items: flex-end; gap: 2.5rem;
 }
 .header-text { flex: 1; }
-.lada { margin: 3rem 0 0; flex-shrink: 0; }
-.lada img { display: block; width: 150px; height: auto; border: 4px solid var(--black); }
+.lada { margin: 3rem 0 0; flex-shrink: 0; position: relative; }
+/* Same light-sweep as the "Test it live" heading, swept over the portrait (img box = 150px
+   + 4px borders → 158 wide, 158/195 ≈ its aspect; figcaption below stays out of the sweep). */
+.lada::before {
+  content: ""; position: absolute; top: 0; left: 0; width: 100%; aspect-ratio: 158 / 195;
+  background: linear-gradient(110deg, transparent 42%, rgba(255, 255, 255, 0.35) 50%, transparent 58%);
+  background-size: 200% 100%;
+  animation: head-shine 5s linear infinite;
+  pointer-events: none;
+}
+.lada img { display: block; width: 150px; height: auto; border: 4px solid var(--black); transition: opacity 0.5s; }
 .lada figcaption {
   margin-top: 6px; font-size: 11px; font-weight: 700;
   text-transform: uppercase; letter-spacing: 0.08em; color: var(--dim);
@@ -205,7 +214,10 @@ td:last-child { color: var(--dim); }
   animation: head-shine 5s linear infinite;
 }
 @keyframes head-shine { from { background-position: 200% 0; } to { background-position: -200% 0; } }
-@media (prefers-reduced-motion: reduce) { .test-head h2 { animation: none; color: var(--text); } }
+@media (prefers-reduced-motion: reduce) {
+  .test-head h2 { animation: none; color: var(--text); }
+  .lada::before { animation: none; background: none; }
+}
 canvas.hero-orb {
   flex-shrink: 0; display: block;
   width: 100px; height: 100px;

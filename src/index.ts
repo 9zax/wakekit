@@ -17,6 +17,8 @@ export type WakeModel = {
   label: string;
   /** BCP-47-ish language tag of the phrase ("th", "en"). */
   lang: string;
+  /** Persona gender of the assistant this name addresses — apps pick response voices by it. */
+  gender?: 'male' | 'female';
   /** Head filename, relative to `base` — the one per-phrase file. */
   file: string;
   /**
