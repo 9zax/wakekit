@@ -60,33 +60,30 @@ must be narrowed to scope itself to wake detection.
 
 ### Functional
 
-- **FR-1** — On a wake hit, once the voice ack has finished (or has demonstrably not started), the
-  demo starts one `SpeechRecognition` session with `lang = 'th-TH'`, `interimResults = true`,
+- **FR-1** — On a wake hit, the demo starts one `SpeechRecognition` session **immediately** —
+  concurrent with the voice ack, not after it — with `lang = 'th-TH'`, `interimResults = true`,
   `continuous = false`. One session per wake hit.
-- **FR-2 (arming)** — `showWakePill()` arms a **single-shot, cancellable** deferred start. It fires
-  from whichever of these happens first, and exactly once:
-  1. the ack clip's `onended` (`demo/main.ts:217`),
-  2. the ack clip's `onerror` (same line),
-  3. the rejected `a.play()` promise at `demo/main.ts:220` (autoplay block — this rejection fires
-     **neither** `ended` nor `error`, so it needs its own entry point),
-  4. `speakAck()`'s empty-voice-set early return at `demo/main.ts:210` (which returns *before* any
-     handler is attached, so path 1 is unreachable there),
-  5. `hideWakePill()`, which calls `curAudio?.pause()` — and `pause()` never fires `ended`.
 
-  `stop()` **clears the armed callback before calling `hideWakePill()`**, so tearing down never
-  starts a session. The deferred start is hooked to the paths above only — never to `hideWakePill()`
-  as the sole funnel, since `stop()` routes through it.
-- **FR-3 (ack echo guard)** — The start is delayed ~250 ms after the ack's terminal event.
-  `HTMLAudioElement`'s `ended` fires at end of decode, not end of audible output, and the
-  recognition capture's echo cancellation is still converging on a freshly opened stream. Without
-  the guard band the ack's tail is transcribed as user speech on machines with speakers near the mic.
+  *Why immediate (this replaced a wait-for-ack design):* Chrome's recognition capture takes
+  **1.8–6.2 s to reach `audiostart` after `.start()`** (measured). Deferring the start to the ack's
+  end meant that dead window landed exactly where the user speaks, swallowing their first words.
+  Started at the hit, the capture window opens roughly as the ack finishes. The ack itself is this
+  page's own audio output, which the recognizer's echo cancellation removes (Chrome's AEC reference
+  is Chrome's own output); a residual ack interim is cosmetic and gets overwritten by real speech.
+  This deleted the whole deferred-arming mechanism (single-shot arm, five trigger paths, 250 ms
+  echo guard) from earlier revisions of this spec.
 - **FR-4 (pill timer)** — no `pillTimer` runs while an ack clip is playing or loading: the pill
   lives exactly as long as the voice, and `onended`/`onerror`/the rejected `play()` promise hide it
-  (each of which also fires the deferred start, so a slow or broken clip can no longer strand
-  dictation). The 2500 ms timer is armed only on the no-clip path, where there is nothing else to
-  hide the pill. (A timer during playback would cut clips longer than 2.5 s mid-sentence.)
+  hide the pill via the clip's `onended`/`onerror`/rejected `play()`. The 2500 ms timer is armed
+  only on the no-clip path, where there is nothing else to hide the pill. (A timer during playback
+  would cut clips longer than 2.5 s mid-sentence.)
 - **FR-5** — While a session is active the transcript panel shows a live state chip and interim
   results as the user speaks; the interim line is replaced by the final result when the session ends.
+- **FR-5b (wake pill = listening indicator)** — The bottom-right wake pill (orb + EN/TH
+  "Listening…") stays visible for the entire dictation session, not just the ack: when the ack
+  finishes while the session is live, the orb switches back to the `listening` variant and the pill
+  remains; `endDictation` hides it. On browsers without STT the pill keeps its original
+  hide-on-ack-end behavior.
 - **FR-6 (re-entry guard)** — Wake hits are ignored while a session is active **and for a 1.5 s
   cooldown after it ends**. The head carries ~1.3 s of audio in its window (`src/worker.ts`:
   `embWin = 16` × `STEP = 1280` samples ≈ 1.28 s), so without the cooldown a wake word in the user's
@@ -180,7 +177,7 @@ Nothing persisted. Demo-local module state in `demo/main.ts`, alongside the exis
 |---|---|---|
 | `rec` | `SpeechRecognition \| null` | Active session. Handlers compare against it for instance identity (FR-8). |
 | `dictating` | `boolean` | FR-6 guard. Set synchronously before `.start()`, cleared 1.5 s after `onend`. |
-| `armed` | `(() => void) \| null` | Single-shot deferred start (FR-2). Cleared by `stop()`. |
+| `sttRetryTimer` | `number` | Pending cold-service retry (FR-7b). Cleared by teardown. |
 | `finals` | `string[]` | Recent final transcripts, newest first, capped. |
 | `interimLi` | `HTMLLIElement` | The one reused interim node (NFR-6). |
 
@@ -194,9 +191,7 @@ New demo-internal functions in `demo/main.ts`:
 | Function | Role |
 |---|---|
 | `sttSupported()` | `!!(window.SpeechRecognition ?? window.webkitSpeechRecognition)`. Called once at boot to pick the panel's mode. |
-| `armDictation()` | Sets `armed`; called from `showWakePill()`. |
-| `fireArmed()` | `const f = armed; armed = null; f?.()` — the once-only trigger, called from all five FR-2 paths. |
-| `startDictation()` | Creates the session, sets `dictating` **first**, `try`/`catch` around `.start()`. |
+| `startDictation()` | Creates the session, sets `dictating` **first**, `try`/`catch` around `.start()`. Called directly from `showWakePill()` at the hit (FR-1), and by the cold-service retry (FR-7b). |
 | `endDictation(r)` | Instance-guarded teardown from `onend`; starts the 1.5 s cooldown. |
 | `abortDictation()` | External teardown from `stop()`: null `rec`, detach handlers, `abort()`, reset panel. |
 | `renderTranscript(interim)` | Mutates `interimLi.textContent` in place; prepends finals as new `<li>`. |
@@ -251,12 +246,10 @@ sttEmpty:     ['nothing yet — say the wake word, then keep talking', 'ยั�
 | Case | Behaviour |
 |---|---|
 | No `SpeechRecognition` (Firefox, older Safari) | Notice shown at boot, list + privacy note hidden, no session ever created, wake detection unaffected (FR-12). |
-| Chromium build with no speech API keys | Behaves as a `network` error; the unsupported notice's wording does not promise Chromium-derived builds. |
-| Ack clip still playing | Start deferred to `onended` + 250 ms (FR-2 path 1, FR-3). |
-| Voice set empty | `speakAck()` returns at line 210 before attaching handlers — FR-2 path 4 fires the deferred start. |
-| Autoplay blocked | `a.play()` rejects and fires neither `ended` nor `error` — FR-2 path 3 fires it. |
-| Ack clip cut short by the pill timer | Cannot happen after FR-4 (timer armed in `onplay`); if `hideWakePill()` still runs first, FR-2 path 5 fires the start. |
-| **Stop** pressed while a start is armed but not fired | `stop()` clears `armed` **before** `hideWakePill()`, so nothing starts 250 ms later (FR-2). |
+| Chromium build with no vendor speech backend (keyless builds, derived browsers) | The constructor exists and the session reaches `audiostart`/`speechstart`, then **hangs forever** — no result, no error, no end (measured). A 15 s watchdog (reset on every result) aborts the session and shows the EN/TH "no reply from the speech service — try Chrome or Edge" line. |
+| Ack clip playing while recognition opens | By design (FR-1) — the ack is the page's own output, removed by the recognizer's AEC; a residual interim is cosmetic and overwritten. |
+| Voice set empty / autoplay blocked / clip error | Irrelevant to dictation now — the session started at the hit; the ack's fate only affects the pill. |
+| **Stop** pressed during a pending cold-service retry | `abortDictation()` clears `sttRetryTimer`, so no session starts later (FR-7b). |
 | Wake word fires during a session | Ignored by the `dictating` guard (FR-6). No second session, no hit-list entry. |
 | Wake word in the user's closing words | Still inside the head's ~1.3 s window when the session ends — absorbed by the 1.5 s cooldown (FR-6). |
 | `.start()` throws `InvalidStateError` | Caught; the chip shows the generic EN/TH error line; `dictating` is cleared (FR-10). |
@@ -284,15 +277,15 @@ Chrome, then one cross-browser check.
 | T-1 | `npx tsc --noEmit` clean | NFR-4 |
 | T-2 | `npm run selfcheck` still green | NFR-10 |
 | T-3 | `git diff package.json` shows no new dependency | NFR-1 |
-| T-4 | Chrome: wake → ack finishes → speak Thai → interim appears, then one final line | FR-1, FR-2, FR-5 |
-| T-5 | Chrome: the ack's own recorded voice never appears in the transcript, checked on laptop speakers (not headphones) | FR-3 |
+| T-4 | Chrome: wake → speak Thai right after the ack → interim appears, then one final line; first words are not swallowed | FR-1, FR-5 |
+| T-5 | Chrome: the ack's own recorded voice does not survive into a **final** transcript line, checked on laptop speakers (not headphones); a transient interim is acceptable | FR-1 (AEC) |
 | T-6 | Chrome: throttle the network so the first ack mp3 loads slowly → pill and dictation still behave; clip is not cut off | FR-4 |
 | T-7 | Chrome: say the wake word again mid-dictation → no new session, no new hit entry, **and the score trace keeps moving and crosses the threshold** (proves the wake mic is still live, not merely guarded) | FR-6, FR-7 |
 | T-7b | Chrome after sitting idle a while: wake → speak → transcript still appears (console may show "cold speech service — retry 1", but no error surfaces) | FR-7b |
 | T-8 | Chrome: end an utterance with the wake word itself → no immediate re-trigger | FR-6 cooldown |
 | T-9 | Chrome: stop speaking → session ends by itself, then the next wake word works normally | FR-7, FR-10 |
 | T-10 | Chrome: press Stop mid-session → panel resets to empty, nothing appended afterwards | FR-8 |
-| T-11 | Chrome: press Stop during the ack (before dictation starts) → no session starts | FR-2 cancel |
+| T-11 | Chrome: press Stop during the ack → session aborts with it, panel resets, nothing appears later | FR-8 |
 | T-12 | Chrome: switch model mid-session → panel resets, listening restarts cleanly | FR-8 |
 | T-13 | Chrome: three wake → ack → utterance **cycles** → three final lines, newest first | FR-11 |
 | T-14 | Chrome: wake, then stay silent → "didn't catch that", wake listening resumes | FR-9 |
