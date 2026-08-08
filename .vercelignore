@@ -1,0 +1,10 @@
+corpus
+corpus5
+features
+features5
+eval
+eval5
+dist
+scripts
+*.png
+.venv-tts
