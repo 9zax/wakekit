@@ -145,7 +145,7 @@ canvas {
 .hits li:first-child:not(.empty) { font-weight: 700; }
 .hits .empty { color: var(--faint); }
 
-table { border-collapse: collapse; width: 100%; margin-top: 0.8rem; font-size: 14px; }
+table { border-collapse: collapse; width: 100%; margin-top: 0.8rem; font-size: 14px; display: block; overflow-x: auto; }
 th, td { text-align: left; padding: 8px 14px 8px 0; border-bottom: 1px solid var(--border-subtle); vertical-align: top; }
 th {
   font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.12em;
