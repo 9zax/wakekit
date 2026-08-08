@@ -125,9 +125,9 @@ function onScore(score: number) {
 }
 
 function onHit(score: number) {
-  // The ack plays a recorded voice out loud, and dictation listens afterward — ignore hits during
-  // either, or the demo wakes itself (or re-dictates its own speech) in a loop.
-  if ((curAudio && !curAudio.paused && !curAudio.ended) || dictating) return;
+  // Ignore hits while dictation is listening (plus its cooldown) — the demo must not re-wake
+  // from the user's own dictated speech.
+  if (dictating) return;
   hitMarks.push(trace.length - 1);
   if (hitCount === 0) hitsEl.innerHTML = '';
   hitCount++;
@@ -171,7 +171,6 @@ function hideWakePill() {
   pill.hidden = true;
   cancelAnimationFrame(orbRaf);
   clearTimeout(pillTimer);
-  curAudio?.pause();
 }
 
 function showWakePill() {
@@ -179,65 +178,43 @@ function showWakePill() {
   pill.hidden = false; // display:none → block replays the slide-in animation
   startOrb();
   clearTimeout(pillTimer);
-  // Dictation starts at the hit, concurrent with the ack: Chrome's capture takes 2-6s to open
-  // (measured audiostart latency), so starting now means it's ready right as the ack ends — and
-  // the ack is this page's own audio output, which the recognizer's echo cancellation removes.
+  // While dictation listens, the pill is its "Listening…" indicator and endDictation hides it;
+  // the guarded timer covers browsers with no STT, where no session ever starts.
+  pillTimer = window.setTimeout(() => { if (!rec) hideWakePill(); }, PILL_MS);
+  // Dictation starts at the hit: Chrome's capture takes 2-6s to reach audiostart (measured), so
+  // starting now means the window is open by the time the user speaks.
   startDictation();
-  speakAck();
+  playWakeChime();
 }
 
-// ---- Voice ack — a pre-recorded voice from static/voices answers the wake word (bundled by
-// Vite, since publicDir is 'models'). While it talks the orb flips to the lib's 'working'
-// variant and the pill stays up until the clip ends. Shuffle-bag draw: every clip plays once
-// before any repeats, and the same clip never plays twice in a row.
-// One clip set per persona gender (manifest `gender`) — จาร์วิส answers in a male voice, ละดา
-// in a female one. Unknown/missing gender falls back to female, the original set.
-const VOICE_SETS: Record<string, string[]> = {
-  male: Object.values(import.meta.glob<string>('../static/voices/male/*.mp3', { eager: true, query: '?url', import: 'default' })),
-  female: Object.values(import.meta.glob<string>('../static/voices/female/*.mp3', { eager: true, query: '?url', import: 'default' })),
-};
-const voiceSet = () => VOICE_SETS[current()?.gender ?? 'female'] ?? VOICE_SETS.female;
-let voiceBag: string[] = [];
-let bagSet: string[] = [];
-let lastVoice = '';
+// ---- Wake chime — a short synthesized two-note bell instead of a spoken mp3 ack: a voice ack
+// leaks from the speakers back into the recognition mic and transcribes itself; a 0.6s tonal
+// chime has no words to transcribe. WebAudio synthesis, no asset to load.
+let chimeCtx: AudioContext | null = null;
 
-function nextVoice() {
-  if (bagSet !== voiceSet()) { bagSet = voiceSet(); voiceBag = []; } // model switch resets the bag
-  if (!voiceBag.length) {
-    voiceBag = [...bagSet].sort(() => Math.random() - 0.5); // ponytail: biased shuffle, fine for a handful of clips
-    // pop() draws from the end — make sure the new bag doesn't open with the clip just played
-    if (voiceBag.length > 1 && voiceBag[voiceBag.length - 1] === lastVoice)
-      [voiceBag[0], voiceBag[voiceBag.length - 1]] = [voiceBag[voiceBag.length - 1], voiceBag[0]];
+function playWakeChime() {
+  chimeCtx ??= new AudioContext();
+  const ctx = chimeCtx;
+  if (ctx.state === 'suspended') void ctx.resume(); // allowed: the Start click was a user gesture
+  const t0 = ctx.currentTime;
+  // Two mellow notes a fourth apart (C5 → F5), almost pure fundamental, gentle 30ms attack and a
+  // ~1.6s exponential ring-out. Tuning knobs: NOTES for pitch, the 1.6/1.7 pair for ring length.
+  const NOTES: Array<[number, number]> = [[523.25, 0], [698.46, 0.16]];
+  const PARTIALS: Array<[number, number]> = [[1, 0.4], [2, 0.04]];
+  for (const [freq, at] of NOTES) {
+    for (const [mult, peak] of PARTIALS) {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = 'sine';
+      o.frequency.value = freq * mult;
+      g.gain.setValueAtTime(0, t0 + at);
+      g.gain.linearRampToValueAtTime(peak, t0 + at + 0.03);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + at + 1.6);
+      o.connect(g).connect(ctx.destination);
+      o.start(t0 + at);
+      o.stop(t0 + at + 1.7);
+    }
   }
-  lastVoice = voiceBag.pop()!;
-  return lastVoice;
-}
-
-let curAudio: HTMLAudioElement | null = null;
-
-// The ack is done (or never happened). If dictation is still listening, the pill stays up as its
-// "Listening…" indicator — endDictation hides it; otherwise hide now (pre-STT behavior).
-function ackDone() {
-  if (rec) startOrb('listening');
-  else hideWakePill();
-}
-
-function speakAck() {
-  if (!voiceSet().length) {
-    pillTimer = window.setTimeout(ackDone, PILL_MS); // no clip — resolve on the timer
-    return;
-  }
-  const a = new Audio(nextVoice());
-  a.onplay = () => {
-    if (a !== curAudio) return;
-    // no pill timer while the clip plays — the pill lives as long as the voice, onended resolves.
-    // (A timer here would cut clips longer than PILL_MS mid-sentence.)
-    startOrb('working');
-  };
-  a.onended = a.onerror = () => { if (a === curAudio) ackDone(); };
-  curAudio?.pause(); // a re-wake mid-clip starts the new ack clean
-  curAudio = a;
-  a.play().catch(() => { if (a === curAudio) ackDone(); }); // autoplay blocked — no play/ended/error otherwise fires
 }
 
 // ---- Speech-to-text — Chrome/Edge's own SpeechRecognition, th-TH, one session per wake. Demo
@@ -302,14 +279,34 @@ function ensureSttEmptyState() {
   sttLinesEl.append(li);
 }
 
+// Bottom-center toast echoing what's being said right now: interims repaint it live, a final
+// (or the last interim) lingers 5s, then it hides. Every update resets the clock.
+const sttToast = $<HTMLDivElement>('stt-toast');
+let sttToastTimer = 0;
+
+function showSttToast(text: string) {
+  if (!text) return;
+  sttToast.textContent = text;
+  sttToast.hidden = false;
+  clearTimeout(sttToastTimer);
+  sttToastTimer = window.setTimeout(() => { sttToast.hidden = true; }, 5000);
+}
+
+function hideSttToast() {
+  sttToast.hidden = true;
+  clearTimeout(sttToastTimer);
+}
+
 function renderInterim(text: string) {
   interimLi.textContent = text; // Thai interims revise earlier chars — always repaint whole, never append
+  showSttToast(text);
   ensureSttEmptyState();
 }
 
 function addFinal(text: string) {
   const t = text.trim(); // trims edges only — Thai has no inter-word spaces to split on
   if (!t) return;
+  showSttToast(t);
   finals.unshift(t);
   const li = document.createElement('li');
   li.textContent = t;
@@ -327,6 +324,7 @@ function resetSttPanel() {
   for (const li of [...sttLinesEl.querySelectorAll('li:not(.interim)')]) li.remove();
   ensureSttEmptyState();
   setSttState('', '');
+  hideSttToast();
 }
 
 function startDictation() {

@@ -284,6 +284,9 @@ const stop = await listenMic(kit);   // mic → detector, all local
     </p>
   </footer>
 
+  <!-- Live dictation toast — bottom-center, what the user is saying right now. -->
+  <div id="stt-toast" class="stt-toast" lang="th" hidden aria-hidden="true"></div>
+
   <!-- Wake pill — bottom-right toast when a wake word fires (ported from stt-meeting-product). -->
   <div id="wake-pill" class="wake-pill" hidden aria-hidden="true">
     <canvas id="wake-orb"></canvas>
