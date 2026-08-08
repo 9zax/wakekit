@@ -1,6 +1,10 @@
 // demo/main.ts — the wakekit test page. Everything on-page comes from models/manifest.json, so a
 // new wake word (อีดี, jarvis, …) appears in the picker and the table without touching this file.
 import { WakeKit, listenMic, loadManifest, type WakeModel } from '../src/index';
+
+// absolute base of wherever the page is mounted ('/' locally, '/wakekit/' on GitHub Pages) —
+// worker-side fetches resolve against the worker's URL, so relative paths would break there.
+const BASE = new URL('.', location.href).pathname;
 import { MODE_DRAWS, resolvePreset } from 'thinking-orbs';
 import { downloadExample } from './example-zip';
 import portsMd from '../docs/other-languages.md?raw';
@@ -123,7 +127,7 @@ function onHit(score: number) {
   const li = document.createElement('li');
   li.textContent = `#${hitCount}  ${current()?.label ?? ''}  score ${score.toFixed(3)}  at ${t}s`;
   hitsEl.prepend(li);
-  showWakePill(score);
+  showWakePill();
 }
 
 // ---- Wake pill — bottom-right toast on detection, ported from stt-meeting-product's OrbOverlay.
@@ -131,7 +135,6 @@ function onHit(score: number) {
 // wrapper is stubbed out in vite.config); the slide-in/glow lives in style.css.
 const pill = $<HTMLDivElement>('wake-pill');
 const pillText = $<HTMLSpanElement>('wake-pill-text');
-const pillScore = $<HTMLSpanElement>('wake-pill-score');
 const orbCanvas = $<HTMLCanvasElement>('wake-orb');
 const PILL_MS = 2500;
 const ORB_SIZE = 64; // the lib's big preset (the other tuning is 20, inline-text)
@@ -163,9 +166,8 @@ function hideWakePill() {
   curAudio?.pause();
 }
 
-function showWakePill(score: number) {
+function showWakePill() {
   pillText.textContent = current()?.label ?? '';
-  pillScore.textContent = score.toFixed(3);
   pill.hidden = false; // display:none → block replays the slide-in animation
   startOrb();
   clearTimeout(pillTimer);
@@ -243,6 +245,7 @@ async function start() {
   setStatus(L('loading'));
   try {
     kit = await WakeKit.load({
+      base: BASE,
       model: { file: m.file, threshold: Number(thr.value) },
       verbose: true,
       onScore,
@@ -293,7 +296,7 @@ modelSel.onchange = async () => {
 
 // ---- boot ----
 try {
-  models = await loadManifest('/');
+  models = await loadManifest(BASE);
   for (const m of models) {
     const opt = document.createElement('option');
     opt.value = m.id;

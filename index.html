@@ -250,9 +250,10 @@ const stop = await listenMic(kit);   // mic → detector, all local
   <!-- Wake pill — bottom-right toast when a wake word fires (ported from stt-meeting-product). -->
   <div id="wake-pill" class="wake-pill" hidden aria-hidden="true">
     <canvas id="wake-orb"></canvas>
-    <span id="wake-pill-text"></span>
-    <span class="listen">Listening</span>
-    <span id="wake-pill-score" class="score"></span>
+    <span class="wake-pill-body">
+      <span id="wake-pill-text"></span>
+      <span class="listen">Listening</span>
+    </span>
   </div>
 
   <script type="module" src="/demo/main.ts"></script>

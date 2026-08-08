@@ -25,6 +25,8 @@ function buildLib(): Record<string, string> {
 }
 
 export default defineConfig({
+  // relative asset URLs so the built page works at any mount point (GitHub Pages /wakekit/ included)
+  base: './',
   // models/ doubles as the public dir: manifest.json and every .onnx are served at the origin root,
   // which is exactly the layout a consumer copies to their own static dir.
   publicDir: 'models',
