@@ -1,7 +1,10 @@
 # Running wakekit models in other languages
 
 The three `.onnx` files in `models/` are plain ONNX — anything with an
-[ONNX Runtime](https://onnxruntime.ai/) binding can run them. Only the ~60 lines of glue in
+[ONNX Runtime](https://onnxruntime.ai/) binding can run them. Get them from this repo, the
+[npm package](https://www.npmjs.com/package/wakekit) (`npm i wakekit` →
+`node_modules/wakekit/models/`), or the CDN mirror
+`https://cdn.jsdelivr.net/npm/wakekit/models/`. Only the ~60 lines of glue in
 [`src/worker.ts`](../src/worker.ts) are JavaScript, and every example below is a direct port of it.
 
 ## The pipeline (same in every language)

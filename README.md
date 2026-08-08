@@ -3,6 +3,7 @@
 ![wakekit — train a wake word in any language, run it in the browser](cover.png)
 
 [![GitHub](https://img.shields.io/badge/GitHub-9zax%2Fwakekit-181717?logo=github)](https://github.com/9zax/wakekit)
+[![npm](https://img.shields.io/npm/v/wakekit?logo=npm&color=cb3837)](https://www.npmjs.com/package/wakekit)
 
 ## 🎙️ [**Live demo**](https://wakekit.vercel.app)
 
@@ -38,8 +39,15 @@ page — picker included — is driven by `models/manifest.json`.
 
 ## Use the library
 
-Copy `models/` into your app's static dir, plus `ort-wasm-simd-threaded.{mjs,wasm}` from
-`node_modules/onnxruntime-web/dist/` (see `vite.config.ts` for the dev-server/build recipe).
+```bash
+npm install wakekit
+```
+
+The package ships the models too (`node_modules/wakekit/models/`) — copy them into your app's
+static dir, or skip hosting entirely and point `base` at the CDN:
+`https://cdn.jsdelivr.net/npm/wakekit/models/`. Also serve
+`ort-wasm-simd-threaded.{mjs,wasm}` from `node_modules/onnxruntime-web/dist/` (see
+`vite.config.ts` for the dev-server/build recipe).
 
 ```ts
 import { WakeKit, listenMic, loadManifest } from 'wakekit';

@@ -1,6 +1,6 @@
 {
   "name": "wakekit",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Train a wake word for any language with TTS, run it in the browser. No GPU, no torch, no cloud.",
   "type": "module",
   "license": "Apache-2.0",
@@ -13,11 +13,15 @@
     "url": "https://github.com/9zax/wakekit/issues"
   },
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    }
   },
+  "types": "./lib/index.d.ts",
   "files": [
-    "src",
-    "models/manifest.json",
+    "lib",
+    "models",
     "README.md",
     "NOTICE"
   ],
@@ -34,15 +38,17 @@
     "dev": "vite",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
+    "build:lib": "rm -rf lib && tsc -p tsconfig.lib.json && sed -i '' \"s|'./worker.ts'|'./worker.js'|\" lib/index.js",
+    "prepublishOnly": "npm run typecheck && npm run build:lib && npm run selfcheck",
     "eval": "node scripts/eval.mjs",
     "selfcheck": "esbuild src/selfcheck.ts --bundle --format=esm --platform=node --external:onnxruntime-web > .wkc.mjs && node .wkc.mjs eval/clips; rm -f .wkc.mjs"
   },
   "dependencies": {
-    "highlight.js": "^11.11.1",
-    "onnxruntime-web": "^1.27.0",
-    "thinking-orbs": "^0.2.0"
+    "onnxruntime-web": "^1.27.0"
   },
   "devDependencies": {
+    "highlight.js": "^11.11.1",
+    "thinking-orbs": "^0.2.0",
     "esbuild": "^0.24.0",
     "typescript": "^5.6.3",
     "vite": "^5.4.11"

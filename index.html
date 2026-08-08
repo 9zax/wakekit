@@ -127,10 +127,14 @@
     <section id="usage">
       <h2><span class="en">Use the library</span><span class="th">ใช้งานไลบรารี</span></h2>
       <p>
-        <span class="en">Copy <code>models/</code> into your static dir (plus the two
-          <code>ort-wasm-simd-threaded.*</code> files from <code>onnxruntime-web/dist</code>), then:</span>
-        <span class="th">คัดลอก <code>models/</code> ไปไว้ใน static dir ของคุณ (พร้อมไฟล์
-          <code>ort-wasm-simd-threaded.*</code> สองไฟล์จาก <code>onnxruntime-web/dist</code>) แล้ว:</span>
+        <span class="en"><a href="https://www.npmjs.com/package/wakekit"><code>npm install wakekit</code></a> —
+          the package ships the models too. Copy <code>models/</code> into your static dir (plus the two
+          <code>ort-wasm-simd-threaded.*</code> files from <code>onnxruntime-web/dist</code>), or point
+          <code>base</code> at <code>cdn.jsdelivr.net/npm/wakekit/models/</code>, then:</span>
+        <span class="th"><a href="https://www.npmjs.com/package/wakekit"><code>npm install wakekit</code></a> —
+          แพ็กเกจแถมโมเดลมาให้ด้วย คัดลอก <code>models/</code> ไปไว้ใน static dir ของคุณ (พร้อมไฟล์
+          <code>ort-wasm-simd-threaded.*</code> สองไฟล์จาก <code>onnxruntime-web/dist</code>) หรือชี้
+          <code>base</code> ไปที่ <code>cdn.jsdelivr.net/npm/wakekit/models/</code> แล้ว:</span>
       </p>
       <figure class="codeblock">
         <figcaption><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="cb-name">app.ts</span></figcaption>
@@ -238,6 +242,7 @@ const stop = await listenMic(kit);   // mic → detector, all local
     <p>
       <span class="en"><a href="https://github.com/9zax/wakekit/blob/main/LICENSE">Apache-2.0</a> ·
         open source: <a href="https://github.com/9zax/wakekit">github.com/9zax/wakekit</a> ·
+        <a href="https://www.npmjs.com/package/wakekit">npm: wakekit</a> ·
         built on <a href="https://github.com/dscripka/openWakeWord">openWakeWord</a>
         by David Scripka (frozen mel-spectrogram + Google speech-embedding models, Apache-2.0) and
         <a href="https://onnxruntime.ai/">ONNX Runtime Web</a> (MIT).
@@ -246,6 +251,7 @@ const stop = await listenMic(kit);   // mic → detector, all local
         Full attributions: <a href="https://github.com/9zax/wakekit/blob/main/NOTICE">NOTICE</a>.</span>
       <span class="th"><a href="https://github.com/9zax/wakekit/blob/main/LICENSE">Apache-2.0</a> ·
         โอเพนซอร์ส: <a href="https://github.com/9zax/wakekit">github.com/9zax/wakekit</a> ·
+        <a href="https://www.npmjs.com/package/wakekit">npm: wakekit</a> ·
         สร้างบน <a href="https://github.com/dscripka/openWakeWord">openWakeWord</a>
         โดย David Scripka (โมเดล mel-spectrogram + Google speech-embedding ที่ freeze ไว้, Apache-2.0) และ
         <a href="https://onnxruntime.ai/">ONNX Runtime Web</a> (MIT)
