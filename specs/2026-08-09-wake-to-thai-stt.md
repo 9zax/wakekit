@@ -80,10 +80,11 @@ must be narrowed to scope itself to wake detection.
   `HTMLAudioElement`'s `ended` fires at end of decode, not end of audible output, and the
   recognition capture's echo cancellation is still converging on a freshly opened stream. Without
   the guard band the ack's tail is transcribed as user speech on machines with speakers near the mic.
-- **FR-4 (pill timer)** — `pillTimer` is armed in the clip's `onplay`, not before playback. Today
-  `showWakePill()` arms a 2500 ms timer (`demo/main.ts:176`) *before* `speakAck()`; a clip that is
-  slow to start is `pause()`d mid-load, which fires neither `ended` nor `play`, stranding the wake
-  pill and (with this feature) the deferred start.
+- **FR-4 (pill timer)** — no `pillTimer` runs while an ack clip is playing or loading: the pill
+  lives exactly as long as the voice, and `onended`/`onerror`/the rejected `play()` promise hide it
+  (each of which also fires the deferred start, so a slow or broken clip can no longer strand
+  dictation). The 2500 ms timer is armed only on the no-clip path, where there is nothing else to
+  hide the pill. (A timer during playback would cut clips longer than 2.5 s mid-sentence.)
 - **FR-5** — While a session is active the transcript panel shows a live state chip and interim
   results as the user speaks; the interim line is replaced by the final result when the session ends.
 - **FR-6 (re-entry guard)** — Wake hits are ignored while a session is active **and for a 1.5 s
@@ -95,6 +96,16 @@ must be narrowed to scope itself to wake detection.
 - **FR-7** — When the user stops speaking the session ends on its own and the demo returns to
   wake-word listening with no user action. **Wake detection is never torn down**: `WakeKit`,
   `listenMic`, and the score trace keep running throughout; only the `onHit` guard flips.
+  (Concurrent capture is confirmed safe: a probe with the wake `getUserMedia` stream held open ran
+  a full recognition session normally.)
+- **FR-7b (cold-service retry)** — Chromium's speech service, when cold (first session after idle),
+  kills the session with `error: 'aborted'` ~40 ms after `start()`, before `audiostart` — and that
+  dead start is what spins the service up, so a session ~200 ms later succeeds. Measured with a
+  bare probe (no wakekit code on the page): 1st start `aborted` at 36 ms, next session reached
+  `audiostart` and ran normally. The demo therefore retries `start()` up to twice (300 ms, then
+  1000 ms) when a session dies with `aborted` before `audiostart`; the `dictating` guard holds
+  through the retry gap, Stop cancels the pending retry, and only after the retries are exhausted
+  is the error surfaced. An `aborted` *after* `audiostart` is not retried.
 - **FR-8 (teardown)** — Any path through `stop()` (the `#toggle` button, `modelSel.onchange` at
   `demo/main.ts:301`, and the worker-crash `onError` at `demo/main.ts:261`) aborts an active session
   and resets the panel to its empty state, clearing `finals`. Teardown **nulls `rec` and detaches
@@ -277,6 +288,7 @@ Chrome, then one cross-browser check.
 | T-5 | Chrome: the ack's own recorded voice never appears in the transcript, checked on laptop speakers (not headphones) | FR-3 |
 | T-6 | Chrome: throttle the network so the first ack mp3 loads slowly → pill and dictation still behave; clip is not cut off | FR-4 |
 | T-7 | Chrome: say the wake word again mid-dictation → no new session, no new hit entry, **and the score trace keeps moving and crosses the threshold** (proves the wake mic is still live, not merely guarded) | FR-6, FR-7 |
+| T-7b | Chrome after sitting idle a while: wake → speak → transcript still appears (console may show "cold speech service — retry 1", but no error surfaces) | FR-7b |
 | T-8 | Chrome: end an utterance with the wake word itself → no immediate re-trigger | FR-6 cooldown |
 | T-9 | Chrome: stop speaking → session ends by itself, then the next wake word works normally | FR-7, FR-10 |
 | T-10 | Chrome: press Stop mid-session → panel resets to empty, nothing appended afterwards | FR-8 |

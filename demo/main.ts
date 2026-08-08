@@ -222,9 +222,8 @@ function speakAck() {
   const a = new Audio(nextVoice());
   a.onplay = () => {
     if (a !== curAudio) return;
-    // armed here, not before playback — a clip that's slow to start would otherwise be pause()d
-    // by a timer that began counting before it ever played, stranding both the pill and dictation
-    pillTimer = window.setTimeout(hideWakePill, PILL_MS);
+    // no pill timer while the clip plays — the pill lives as long as the voice, onended hides it.
+    // (A timer here would cut clips longer than PILL_MS mid-sentence.)
     startOrb('working');
   };
   a.onended = a.onerror = () => { if (a === curAudio) hideWakePill(); };
@@ -267,6 +266,8 @@ let armed: (() => void) | null = null; // FR-2: single-shot deferred dictation s
 let dictationDelay = 0; // FR-3: ~250ms echo guard between the ack ending and .start()
 let cooldownTimer = 0;
 let lastSttError = '';
+let sttSawAudio = false; // did the current session reach audiostart? (cold-service aborts never do)
+let sttRetries = 0;
 const finals: string[] = [];
 
 function setSttState(text: string, cls = '') {
@@ -278,7 +279,7 @@ function sttErrorLabel(code: string): string {
   if (code === 'no-speech') return L('sttNoSpeech');
   if (code === 'network') return L('sttNetwork');
   if (code === 'not-allowed' || code === 'service-not-allowed') return L('sttMic');
-  return L('sttError'); // audio-capture, and anything else Chrome throws
+  return `${L('sttError')} (${code})`; // audio-capture etc. — show the raw code, it's the only clue we get
 }
 
 function ensureSttEmptyState() {
@@ -320,7 +321,12 @@ function resetSttPanel() {
 }
 
 function armDictation() {
-  if (sttSupported()) armed = startDictation;
+  if (!sttSupported()) return;
+  // guard from arm time, not session start — the gaps (ack ending → 250ms delay → Chrome's
+  // 100-500ms connect) are otherwise re-enterable: a second hit there starts a second session,
+  // and Chrome answers by firing 'aborted' at the first one.
+  dictating = true;
+  armed = startDictation;
 }
 
 function fireArmed() {
@@ -336,8 +342,9 @@ function cancelDictationArm() {
 
 function startDictation() {
   const SR = window.SpeechRecognition ?? window.webkitSpeechRecognition;
-  if (!SR) return;
-  dictating = true; // set before start() — Chrome takes 100-500ms to connect, a re-enterable gap otherwise
+  if (!SR || rec) return; // never a second concurrent session — that's what gets one 'aborted'
+  dictating = true;
+  sttSawAudio = false;
   const r = new SR();
   r.lang = 'th-TH';
   r.interimResults = true;
@@ -352,7 +359,11 @@ function startDictation() {
     }
     renderInterim(interim);
   };
-  r.onerror = (e) => { lastSttError = e.error; };
+  r.onaudiostart = () => { if (r === rec) sttSawAudio = true; };
+  r.onerror = (e) => {
+    lastSttError = e.error;
+    console.warn('[wakekit demo] stt error:', e.error, e.message || '');
+  };
   r.onend = () => endDictation(r);
   rec = r;
   setSttState(L('sttListening'), 'live');
@@ -367,12 +378,23 @@ function startDictation() {
 function endDictation(r: SpeechRecognition) {
   if (r !== rec) return; // stale 'end' from a session already superseded — never tear down the new one
   rec = null;
+  const err = lastSttError;
+  lastSttError = '';
+  // Cold speech service: the very first session after idle dies with 'aborted' in ~40ms, before
+  // audiostart — but that dead start is itself what spins the service up, so an immediate retry
+  // lands on a warm one. (Measured with a bare no-wakekit probe: 1st start aborted at 36ms,
+  // a session ~200ms later ran fine.)
+  if (err === 'aborted' && !sttSawAudio && sttRetries < 2) {
+    sttRetries++;
+    console.warn('[wakekit demo] cold speech service — retry', sttRetries);
+    dictationDelay = window.setTimeout(startDictation, sttRetries === 1 ? 300 : 1000);
+    return; // dictating stays true across the retry — the wake guard must hold through the gap
+  }
+  sttRetries = 0;
   interimLi.textContent = ''; // discard any unfinished interim — Chrome guarantees a final only on the clean path
   ensureSttEmptyState();
   clearTimeout(cooldownTimer);
   cooldownTimer = window.setTimeout(() => { dictating = false; }, 1500); // FR-6: head still carries ~1.3s of this speech
-  const err = lastSttError;
-  lastSttError = '';
   setSttState(err ? sttErrorLabel(err) : '', err ? 'error' : '');
 }
 
@@ -384,6 +406,7 @@ function abortDictation() {
     r.abort();
   }
   dictating = false;
+  sttRetries = 0;
   clearTimeout(cooldownTimer);
   resetSttPanel();
 }
