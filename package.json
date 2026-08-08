@@ -41,7 +41,7 @@
     "build:lib": "rm -rf lib && tsc -p tsconfig.lib.json && sed -i '' \"s|'./worker.ts'|'./worker.js'|\" lib/index.js",
     "prepublishOnly": "npm run typecheck && npm run build:lib && npm run selfcheck",
     "eval": "node scripts/eval.mjs",
-    "selfcheck": "esbuild src/selfcheck.ts --bundle --format=esm --platform=node --external:onnxruntime-web > .wkc.mjs && node .wkc.mjs eval/clips; rm -f .wkc.mjs"
+    "selfcheck": "esbuild src/selfcheck.ts --bundle --format=esm --platform=node --external:onnxruntime-web > .wkc.mjs && node .wkc.mjs eval/clips; s=$?; rm -f .wkc.mjs; exit $s"
   },
   "dependencies": {
     "onnxruntime-web": "^1.27.0"

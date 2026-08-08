@@ -120,6 +120,10 @@ self.onmessage = async ({ data }: MessageEvent) => {
       if (msg.wasmBase) ort.env.wasm.wasmPaths = msg.wasmBase;
       bar = msg.threshold ?? bar;
       verbose = msg.verbose === true;
+      // Release before replacing: a re-load (demo model switch, selfcheck) must not leak the
+      // old sessions' wasm memory — enough re-loads and InferenceSession.create starts failing.
+      for (const s of [melS, embS, headS]) void s?.release();
+      melS = embS = headS = null;
       const opts: ort.InferenceSession.SessionOptions = { executionProviders: ['wasm'] };
       [melS, embS, headS] = await Promise.all([
         ort.InferenceSession.create(msg.melUrl ?? '', opts),

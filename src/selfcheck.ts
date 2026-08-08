@@ -83,19 +83,23 @@ function wav16(path: string): Float32Array {
  * produces ZERO scores — indistinguishable from a confident no. A live stream always has that
  * lead-in; a file does not.
  */
+let loadedHead: string | null = null;
 async function feed(clip: Float32Array, head: Head) {
   posted.length = 0;
-  send({
-    type: 'load',
-    melUrl: 'model:melspectrogram.onnx',
-    embUrl: 'model:embedding_model.onnx',
-    headUrl: `model:${head.file}`,
-    threshold: head.threshold, // the model's OWN bar — models/manifest.json
-  });
-  for (let i = 0; i < 200 && !posted.some((m) => m.type === 'loaded'); i++) await settle(25);
-  const loaded = posted.find((m) => m.type === 'loaded');
-  assert.ok(loaded, `worker never loaded ${head.file}: ${JSON.stringify(posted)}`);
-  posted.length = 0;
+  if (loadedHead !== head.file) {
+    send({
+      type: 'load',
+      melUrl: 'model:melspectrogram.onnx',
+      embUrl: 'model:embedding_model.onnx',
+      headUrl: `model:${head.file}`,
+      threshold: head.threshold, // the model's OWN bar — models/manifest.json
+    });
+    for (let i = 0; i < 200 && !posted.some((m) => m.type === 'loaded'); i++) await settle(25);
+    const loaded = posted.find((m) => m.type === 'loaded');
+    assert.ok(loaded, `worker never loaded ${head.file}: ${JSON.stringify(posted)}`);
+    loadedHead = head.file;
+    posted.length = 0;
+  }
 
   const pad = new Float32Array(24_000);
   const audio = new Float32Array(pad.length * 2 + clip.length);

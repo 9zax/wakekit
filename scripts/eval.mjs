@@ -100,4 +100,10 @@ for (const [k, st] of [...stats].sort()) {
       : `${st.fired} fired  median peak ${med.toFixed(3)}  max peak ${st.maxes[st.maxes.length - 1].toFixed(3)}  ${perMin.toFixed(1)} false fires/min`),
   );
 }
+// The one aggregate the manifest's eval field wants — same formula as the per-group lines.
+{
+  let clips = 0, steps = 0, over = 0;
+  for (const [k, st] of stats) if (k !== 'pos') { clips += st.clips; steps += st.steps; over += st.over; }
+  if (steps) console.log(`  neg overall ${clips} clips  ${((over / (steps * 0.08)) * 60).toFixed(2)} false fires/min`);
+}
 if (worst.length) { console.log(`\n  ${worst.length} clip(s) on the wrong side:`); for (const w of worst.slice(0, 20)) console.log(`    ${w}`); }

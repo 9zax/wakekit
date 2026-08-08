@@ -39,8 +39,15 @@
     "gender": "male",
     "file": "wayu.onnx",
     "threshold": 0.95,
-    "pending": true,
-    "note": "corpus ready — training queued"
+    "note": "Held-out (4 unseen voices): recall 100% (peaks 0.975+), silent on everyday speech and all six sibling names. Known confusables: 'วัยรุ่น' can fire, 'วายร้าย' rarely — next retrain will harden these.",
+    "trainClips": 180,
+    "eval": {
+      "voices": 4,
+      "posClips": 32,
+      "negClips": 348,
+      "recall": 1.0,
+      "falseFiresPerMin": 0.55
+    }
   },
   {
     "id": "thapthim",
@@ -49,8 +56,15 @@
     "gender": "female",
     "file": "thapthim.onnx",
     "threshold": 0.95,
-    "pending": true,
-    "note": "corpus ready — training queued"
+    "note": "Held-out (4 unseen voices): recall 100% (peaks 0.978+), silent on everyday speech and all six sibling names. Known confusables: 'ทิ่มแทง', 'ทีมงาน', 'ทันที' can fire — next retrain will harden these.",
+    "trainClips": 184,
+    "eval": {
+      "voices": 4,
+      "posClips": 32,
+      "negClips": 332,
+      "recall": 1.0,
+      "falseFiresPerMin": 1.34
+    }
   },
   {
     "id": "irin",
@@ -59,8 +73,15 @@
     "gender": "female",
     "file": "irin.onnx",
     "threshold": 0.95,
-    "pending": true,
-    "note": "training queued"
+    "note": "Held-out (4 unseen voices): recall 100% (peaks 0.971+), silent on everyday speech and all six sibling names. Known confusables: 'ไอริส', 'รินน้ำ' can fire — next retrain will harden these.",
+    "trainClips": 180,
+    "eval": {
+      "voices": 4,
+      "posClips": 32,
+      "negClips": 340,
+      "recall": 1.0,
+      "falseFiresPerMin": 0.28
+    }
   },
   {
     "id": "anda",
@@ -69,8 +90,15 @@
     "gender": "female",
     "file": "anda.onnx",
     "threshold": 0.95,
-    "pending": true,
-    "note": "training queued"
+    "note": "Held-out (4 unseen voices): recall 100% (peaks 0.976+), zero false fires on everyday speech, rhymes (อันดับ อันดามัน แพนด้า บันได …) and all six sibling names' positives.",
+    "trainClips": 180,
+    "eval": {
+      "voices": 4,
+      "posClips": 32,
+      "negClips": 340,
+      "recall": 1.0,
+      "falseFiresPerMin": 0.0
+    }
   },
   {
     "id": "nara",
@@ -79,7 +107,14 @@
     "gender": "female",
     "file": "nara.onnx",
     "threshold": 0.95,
-    "pending": true,
-    "note": "training queued"
+    "note": "Held-out (4 unseen voices): recall 100% (peaks 0.970+), silent on everyday speech and all six sibling names. Known confusables: 'นารายณ์' can fire, 'นานา' rarely — next retrain will harden these.",
+    "trainClips": 180,
+    "eval": {
+      "voices": 4,
+      "posClips": 32,
+      "negClips": 332,
+      "recall": 1.0,
+      "falseFiresPerMin": 0.86
+    }
   }
 ]
