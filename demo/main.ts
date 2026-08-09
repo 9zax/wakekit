@@ -5,6 +5,11 @@ import { WakeKit, listenMic, loadManifest, type WakeModel } from '../src/index';
 // absolute base of wherever the page is mounted ('/' locally, '/wakekit/' on GitHub Pages) —
 // worker-side fetches resolve against the worker's URL, so relative paths would break there.
 const BASE = new URL('.', location.href).pathname;
+// Tauri desktop app: WKWebView has no SpeechRecognition, so dictation runs through a native
+// sidecar instead, plus a tray toggle and user-defined `claude -p` voice commands (end of file).
+const IS_TAURI = '__TAURI_INTERNALS__' in window;
+// In the app the window is just the settings panel — style.css hides the site around it.
+if (IS_TAURI) document.body.classList.add('tauri');
 import { MODE_DRAWS, resolvePreset } from 'thinking-orbs';
 import { downloadExample } from './example-zip';
 import jarvisJpg from './jarvis.jpg';
@@ -125,9 +130,9 @@ function onScore(score: number) {
 }
 
 function onHit(score: number) {
-  // Ignore hits while dictation is listening (plus its cooldown) — the demo must not re-wake
-  // from the user's own dictated speech.
-  if (dictating) return;
+  // Ignore hits while dictation is listening (plus its cooldown) or a voice ack is talking —
+  // the demo must not re-wake from the user's dictated speech or its own spoken reply.
+  if (dictating || (curAudio && !curAudio.paused && !curAudio.ended)) return;
   hitMarks.push(trace.length - 1);
   if (hitCount === 0) hitsEl.innerHTML = '';
   hitCount++;
@@ -178,13 +183,18 @@ function showWakePill() {
   pill.hidden = false; // display:none → block replays the slide-in animation
   startOrb();
   clearTimeout(pillTimer);
-  // While dictation listens, the pill is its "Listening…" indicator and endDictation hides it;
-  // the guarded timer covers browsers with no STT, where no session ever starts.
-  pillTimer = window.setTimeout(() => { if (!rec) hideWakePill(); }, PILL_MS);
   // Dictation starts at the hit: Chrome's capture takes 2-6s to reach audiostart (measured), so
   // starting now means the window is open by the time the user speaks.
   startDictation();
-  playWakeChime();
+  if (ackMode === 'voice') {
+    speakAck(); // pill lives as long as the clip — its onended resolves instead of the timer
+  } else {
+    // While dictation listens, the pill is its "Listening…" indicator and endDictation hides it;
+    // the guarded timer covers browsers with no STT, where no session ever starts.
+    pillTimer = window.setTimeout(() => { if (!rec && !sidecarChild) hideWakePill(); }, PILL_MS);
+    playWakeChime();
+  }
+  if (IS_TAURI) void import('@tauri-apps/api/event').then((e) => e.emit('overlay-show'));
 }
 
 // ---- Wake chime — a short synthesized two-note bell instead of a spoken mp3 ack: a voice ack
@@ -217,6 +227,70 @@ function playWakeChime() {
   }
 }
 
+// ---- Reply mode — 🔔 tone (synthesized chime above) or 🗣 voice (pre-recorded TTS clips from
+// static/voices, per persona gender). Voice acks can leak from the speakers into the dictation
+// mic and transcribe themselves (the reason the chime exists) — user's choice, so it's a toggle.
+let ackMode: 'tone' | 'voice' = localStorage.getItem('wakekit-ack') === 'voice' ? 'voice' : 'tone';
+const ackBtns = { tone: $<HTMLButtonElement>('ack-tone'), voice: $<HTMLButtonElement>('ack-voice') };
+function setAckMode(mode: 'tone' | 'voice') {
+  ackMode = mode;
+  localStorage.setItem('wakekit-ack', mode);
+  ackBtns.tone.classList.toggle('on', mode === 'tone');
+  ackBtns.voice.classList.toggle('on', mode === 'voice');
+}
+ackBtns.tone.onclick = () => setAckMode('tone');
+ackBtns.voice.onclick = () => setAckMode('voice');
+setAckMode(ackMode);
+
+// Shuffle-bag draw per persona gender (manifest `gender`): every clip plays once before any
+// repeats, never the same clip twice in a row. Unknown gender falls back to female.
+const VOICE_SETS: Record<string, string[]> = {
+  male: Object.values(import.meta.glob<string>('../static/voices/male/*.mp3', { eager: true, query: '?url', import: 'default' })),
+  female: Object.values(import.meta.glob<string>('../static/voices/female/*.mp3', { eager: true, query: '?url', import: 'default' })),
+};
+const voiceSet = () => VOICE_SETS[current()?.gender ?? 'female'] ?? VOICE_SETS.female;
+let voiceBag: string[] = [];
+let bagSet: string[] = [];
+let lastVoice = '';
+
+function nextVoice() {
+  if (bagSet !== voiceSet()) { bagSet = voiceSet(); voiceBag = []; } // model switch resets the bag
+  if (!voiceBag.length) {
+    voiceBag = [...bagSet].sort(() => Math.random() - 0.5); // ponytail: biased shuffle, fine for a handful of clips
+    // pop() draws from the end — make sure the new bag doesn't open with the clip just played
+    if (voiceBag.length > 1 && voiceBag[voiceBag.length - 1] === lastVoice)
+      [voiceBag[0], voiceBag[voiceBag.length - 1]] = [voiceBag[voiceBag.length - 1], voiceBag[0]];
+  }
+  lastVoice = voiceBag.pop()!;
+  return lastVoice;
+}
+
+let curAudio: HTMLAudioElement | null = null;
+
+// The ack finished (or never started). If dictation still listens the pill stays as its
+// "Listening…" indicator — endDictation hides it; otherwise hide now.
+function ackDone() {
+  if (rec || sidecarChild) startOrb('listening');
+  else hideWakePill();
+}
+
+function speakAck() {
+  if (!voiceSet().length) {
+    pillTimer = window.setTimeout(ackDone, PILL_MS); // no clip — resolve on the timer
+    return;
+  }
+  const a = new Audio(nextVoice());
+  a.onplay = () => {
+    if (a !== curAudio) return;
+    // no pill timer while the clip plays — the pill lives as long as the voice, onended resolves.
+    startOrb('working');
+  };
+  a.onended = a.onerror = () => { if (a === curAudio) ackDone(); };
+  curAudio?.pause(); // a re-wake mid-clip starts the new ack clean
+  curAudio = a;
+  a.play().catch(() => { if (a === curAudio) ackDone(); }); // autoplay blocked — nothing else fires
+}
+
 // ---- Speech-to-text — Chrome/Edge's own SpeechRecognition, th-TH, one session per wake. Demo
 // only: unlike wake detection this sends audio to the browser's speech service, which is why
 // index.html discloses it separately and it never touches src/. spec: 2026-08-09-wake-to-thai-stt.
@@ -226,7 +300,7 @@ const sttPanel = $<HTMLDivElement>('stt');
 const sttState = $<HTMLDivElement>('stt-state');
 const sttLinesEl = $<HTMLOListElement>('stt-lines');
 
-const sttSupported = () => !!(window.SpeechRecognition ?? window.webkitSpeechRecognition);
+const sttSupported = () => IS_TAURI || !!(window.SpeechRecognition ?? window.webkitSpeechRecognition);
 
 // The one interim node: created once, reused forever. A screen reader announces aria-live
 // insertions, so recreating this node each keystroke risks a spurious announcement race — mutate
@@ -254,6 +328,11 @@ let sttSawAudio = false; // did the current session reach audiostart? (cold-serv
 let sttRetries = 0;
 let sttWatchdog = 0; // keyless Chromium builds capture audio but never answer — don't hang forever
 const finals: string[] = [];
+
+// Tauri sidecar dictation state — the sidecar replaces `rec` when IS_TAURI.
+let sidecarChild: { kill(): Promise<void> } | null = null;
+let sidecarGen = 0; // bumped to invalidate stale close handlers (abort vs natural end)
+let sidecarError = '';
 
 function setSttState(text: string, cls = '') {
   sttState.textContent = text;
@@ -290,6 +369,8 @@ function showSttToast(text: string) {
   sttToast.hidden = false;
   clearTimeout(sttToastTimer);
   sttToastTimer = window.setTimeout(() => { sttToast.hidden = true; }, 5000);
+  // mirror every caption (interims, finals, command feedback) onto the above-all-apps overlay
+  if (IS_TAURI) void import('@tauri-apps/api/event').then((e) => e.emit('overlay-text', text));
 }
 
 function hideSttToast() {
@@ -316,6 +397,72 @@ function addFinal(text: string) {
     sttLinesEl.lastElementChild?.remove();
   }
   ensureSttEmptyState();
+  handleCommand(t);
+}
+
+// ---- Voice commands — finals only (interims revise themselves too much to act on).
+// `type` picks what a match does: 'claude' pipes to `claude -p` (default, old entries have no
+// field), 'chrome' Google-searches the argument in Chrome, 'youtube' searches YouTube.
+type VoiceCmd = { word: string; match: 'prefix' | 'include'; type?: 'claude' | 'chrome' | 'youtube'; prompt: string };
+const CMDS_KEY = 'wakekit-voice-cmds';
+let voiceCmds: VoiceCmd[] = [];
+try { voiceCmds = JSON.parse(localStorage.getItem(CMDS_KEY) ?? '[]'); } catch { /* corrupt — start empty */ }
+const saveCmds = () => localStorage.setItem(CMDS_KEY, JSON.stringify(voiceCmds));
+
+async function openExternal(url: string, app?: string) {
+  if (IS_TAURI) void (await import('@tauri-apps/plugin-opener')).openUrl(url, app);
+  else window.open(url, '_blank');
+}
+
+// `word` may hold comma-separated aliases; Thai recognizers insert spaces unpredictably, so each
+// alias matches with optional whitespace between its characters ('^'-anchored for prefix).
+// Returns the text AFTER the match — the command's argument — or null when nothing matches.
+function flexMatch(t: string, c: VoiceCmd): string | null {
+  for (const alias of c.word.split(',').map((w) => w.replace(/\s+/g, '')).filter(Boolean)) {
+    const re = new RegExp((c.match === 'include' ? '' : '^') +
+      alias.split('').map((ch) => ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s*'));
+    const m = re.exec(t);
+    if (m) return t.slice(m.index + m[0].length).trim();
+  }
+  return null;
+}
+
+function handleCommand(t: string) {
+  const m = t.match(/^เปิด\s*เพลง\s*(.+)/); // built-in — works on the website too
+  if (m) {
+    const song = m[1].trim();
+    void openExternal(`https://www.youtube.com/results?search_query=${encodeURIComponent(song)}`);
+    showSttToast(`▶ ${song}`);
+    return;
+  }
+  if (!IS_TAURI) return; // user-defined commands are desktop-app only
+  for (const c of voiceCmds) {
+    const arg = flexMatch(t, c);
+    if (arg === null) continue;
+    const q = arg || t; // bare command word — fall back to the whole utterance
+    const type = c.type ?? 'claude';
+    if (type === 'chrome') {
+      void openExternal(`https://www.google.com/search?q=${encodeURIComponent(q)}`, 'Google Chrome');
+      showSttToast(`🔎 ${q}`);
+    } else if (type === 'youtube') {
+      void openExternal(`https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`);
+      showSttToast(`▶ ${q}`);
+    } else {
+      void runClaudeCmd(c, t);
+    }
+    return; // first matching command wins
+  }
+}
+
+async function runClaudeCmd(cmd: VoiceCmd, text: string) {
+  showSttToast(`🤖 ${cmd.word} …`);
+  const { Command } = await import('@tauri-apps/plugin-shell');
+  const quote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
+  // login shell so `claude` resolves from the user's PATH even when launched from Finder
+  const out = await Command.create('run-claude', ['-lc',
+    `claude -p ${quote(`${cmd.prompt}\n\nUser said: ${text}`)}`]).execute();
+  const reply = (out.stdout || out.stderr).trim();
+  showSttToast(reply ? `🤖 ${reply.slice(0, 300)}` : `🤖 exit ${out.code}`);
 }
 
 function resetSttPanel() {
@@ -328,6 +475,7 @@ function resetSttPanel() {
 }
 
 function startDictation() {
+  if (IS_TAURI) { void startDictationTauri(); return; }
   const SR = window.SpeechRecognition ?? window.webkitSpeechRecognition;
   if (!SR || rec) return; // never a second concurrent session — that's what gets one 'aborted'
   dictating = true;
@@ -402,7 +550,109 @@ function endDictation(r: SpeechRecognition) {
   setSttState(err ? sttErrorLabel(err) : '', err ? 'error' : '');
 }
 
+// ---- Mic selection (Tauri tray → Microphone) — per-app choice, the system default is left
+// alone. Saved by LABEL, not deviceId: WebKit rotates device ids between sessions, labels stick.
+// The Swift sidecar gets the same label as argv and resolves it against CoreAudio itself.
+const MIC_KEY = 'wakekit-mic';
+
+async function micDeviceId(): Promise<string | undefined> {
+  const want = localStorage.getItem(MIC_KEY);
+  if (!want) return undefined; // system default
+  const devs = await navigator.mediaDevices.enumerateDevices();
+  return devs.find((d) => d.kind === 'audioinput' && d.label === want)?.deviceId;
+}
+
+// Mic level meter — only while the sidecar listens: RMS at ~25fps → 'overlay-level' events so
+// the overlay orb bounces with the voice. setInterval, not rAF: the main window may be hidden
+// behind other apps (that's the overlay's whole point) and rAF stops firing there.
+let levelStop: (() => void) | null = null;
+
+async function startLevelMeter() {
+  if (levelStop) return;
+  try {
+    const id = await micDeviceId();
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: id ? { deviceId: { exact: id } } : true,
+    });
+    const ctx = new AudioContext();
+    const an = ctx.createAnalyser();
+    an.fftSize = 512;
+    ctx.createMediaStreamSource(stream).connect(an);
+    const buf = new Float32Array(an.fftSize);
+    const { emit } = await import('@tauri-apps/api/event');
+    const iv = window.setInterval(() => {
+      an.getFloatTimeDomainData(buf);
+      let sum = 0;
+      for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+      void emit('overlay-level', Math.min(1, Math.sqrt(sum / buf.length) * 8));
+    }, 40);
+    levelStop = () => {
+      clearInterval(iv);
+      void ctx.close();
+      for (const tr of stream.getTracks()) tr.stop();
+    };
+  } catch { /* meter is decoration — dictation works without it */ }
+}
+
+function stopLevelMeter() {
+  levelStop?.();
+  levelStop = null;
+}
+
+// ---- Tauri dictation — the Swift sidecar (SFSpeechRecognizer th-TH) plays the role of `rec`.
+// It streams {"type":"interim"|"final"|"error"|"end","text"} JSON lines and exits after one
+// utterance (2s silence / 15s cap live in Swift), so the browser retry/watchdog machinery
+// above is deliberately bypassed.
+async function startDictationTauri() {
+  if (sidecarChild) return;
+  dictating = true; // set before the first await — the wake guard must hold from the hit onward
+  sidecarError = '';
+  setSttState(L('sttListening'), 'live');
+  void startLevelMeter();
+  const gen = ++sidecarGen;
+  try {
+    const { Command } = await import('@tauri-apps/plugin-shell');
+    const mic = localStorage.getItem(MIC_KEY);
+    const cmd = Command.sidecar('binaries/stt-th', mic ? [mic] : []);
+    cmd.stdout.on('data', (line: string) => {
+      if (gen !== sidecarGen) return;
+      let msg: { type: string; text: string };
+      try { msg = JSON.parse(line); } catch { return; }
+      if (msg.type === 'interim') renderInterim(msg.text);
+      else if (msg.type === 'final') { addFinal(msg.text); renderInterim(''); }
+      else if (msg.type === 'error') sidecarError = msg.text;
+    });
+    cmd.on('close', () => { if (gen === sidecarGen) endDictationTauri(); });
+    cmd.on('error', (e) => {
+      showSttToast(`⚠ stt: ${String(e)}`); // toast mirrors onto the overlay — visible over any app
+      if (gen === sidecarGen) { sidecarError = 'no-service'; endDictationTauri(); }
+    });
+    sidecarChild = await cmd.spawn();
+  } catch (e) {
+    console.warn('[wakekit demo] sidecar spawn failed:', e);
+    showSttToast(`⚠ stt: ${e instanceof Error ? e.message : String(e)}`);
+    if (gen === sidecarGen) { sidecarError = 'no-service'; endDictationTauri(); }
+  }
+}
+
+function endDictationTauri() {
+  sidecarGen++;
+  sidecarChild = null;
+  stopLevelMeter();
+  hideWakePill();
+  interimLi.textContent = '';
+  ensureSttEmptyState();
+  clearTimeout(cooldownTimer);
+  cooldownTimer = window.setTimeout(() => { dictating = false; }, 1500); // same FR-6 tail as endDictation
+  setSttState(sidecarError ? sttErrorLabel(sidecarError) : '', sidecarError ? 'error' : '');
+  sidecarError = '';
+}
+
 function abortDictation() {
+  sidecarGen++; // orphan any in-flight sidecar callbacks before killing it
+  void sidecarChild?.kill();
+  sidecarChild = null;
+  stopLevelMeter();
   const r = rec;
   rec = null;
   if (r) {
@@ -457,14 +707,19 @@ async function start() {
       onHit,
       onError: (msg) => { setStatus(`worker error: ${msg}`, 'error'); void stop(); },
     });
-    stopMic = await listenMic(kit);
+    stopMic = await listenMic(kit, await micDeviceId());
     startedAt = performance.now();
     setStatus(`${L('listening')} — ${m.label} @ ${Number(thr.value).toFixed(3)}`, 'live');
     toggle.textContent = L('stop');
     toggle.classList.add('stop');
+    void setTrayState(true);
   } catch (e) {
     kit?.dispose(); kit = null;
-    setStatus(e instanceof Error ? e.message : String(e), 'error');
+    const msg = e instanceof Error ? e.message : String(e);
+    setStatus(msg, 'error');
+    // the window may be hidden behind other apps when started from the tray — echo the failure
+    // on the always-on-top overlay so a silent no-op is impossible
+    if (IS_TAURI) void import('@tauri-apps/api/event').then((ev) => ev.emit('overlay-text', `⚠ ${msg}`));
     toggle.textContent = L('start');
   }
   toggle.disabled = false;
@@ -480,6 +735,7 @@ async function stop() {
   setStatus(L('idle'));
   toggle.textContent = L('start');
   toggle.classList.remove('stop');
+  void setTrayState(false);
 }
 
 toggle.onclick = () => (kit ? void stop() : void start());
@@ -492,6 +748,8 @@ thr.oninput = () => {
 };
 
 modelSel.onchange = async () => {
+  localStorage.setItem('wakekit-model', modelSel.value); // settings must survive a relaunch
+  void setTrayState(!!kit); // tray header names the active persona
   const m = current();
   if (!m) return;
   thr.value = String(m.threshold); // each head ships its own measured bar
@@ -553,11 +811,14 @@ try {
     }
     results.append(tr);
   }
+  // restore the wake word picked last session; current() falls back to the first ready head
+  modelSel.value = localStorage.getItem('wakekit-model') ?? '';
   const ready = current();
   if (ready) {
     modelSel.value = ready.id; // never boot on a disabled (pending) entry
     thr.value = String(ready.threshold);
     thrVal.textContent = ready.threshold.toFixed(3);
+    if (IS_TAURI) void start(); // the app is an always-listening tray utility — mic on from launch
   } else {
     // every entry still pending — tables render, live test waits for the first trained head
     toggle.disabled = true;
@@ -617,6 +878,208 @@ if (ports.length) showPort();
 // static code blocks (the app.ts usage example)
 for (const el of document.querySelectorAll<HTMLElement>('pre code[class*="language-"]:not(#port-code)'))
   hljs.highlightElement(el);
+
+// ---- Tauri desktop app — tray toggle + voice-command settings. The web page never runs this,
+// and every @tauri-apps import is dynamic so the Vercel bundle stays Tauri-free.
+let trayListen: { setText(text: string): Promise<void> } | null = null;
+let trayHeader: { setText(text: string): Promise<void> } | null = null;
+let tray: { setIcon(icon: unknown): Promise<void> } | null = null;
+
+// The tray flower painted in the state color — green = listening, red = stopped.
+async function trayFlower(color: string) {
+  const { Image } = await import('@tauri-apps/api/image');
+  const S = 44; // 2x for retina menu bars
+  const c = document.createElement('canvas');
+  c.width = c.height = S;
+  const x = c.getContext('2d')!;
+  x.translate(S / 2, S / 2);
+  x.fillStyle = color;
+  for (let i = 0; i < 4; i++) { // 4 lozenges through the center = 8 petals
+    x.beginPath();
+    x.ellipse(0, 0, S * 0.105, S * 0.46, (i * Math.PI) / 4, 0, Math.PI * 2);
+    x.fill();
+  }
+  x.beginPath();
+  x.arc(0, 0, S * 0.17, 0, Math.PI * 2);
+  x.fill();
+  return Image.new(Array.from(x.getImageData(0, 0, S, S).data), S, S);
+}
+
+async function setTrayState(listening: boolean) {
+  void trayHeader?.setText(`AI: ${current()?.label ?? '—'}`);
+  void trayListen?.setText(listening ? 'Stop listening' : 'Start listening');
+  try {
+    await tray?.setIcon(await trayFlower(listening ? '#16a34a' : '#ef4444'));
+  } catch (e) {
+    console.warn('[wakekit demo] tray icon update failed:', e);
+  }
+}
+
+async function showMainWindow() {
+  const { getCurrentWindow } = await import('@tauri-apps/api/window');
+  const w = getCurrentWindow();
+  await w.show();
+  await w.unminimize();
+  await w.setFocus();
+}
+
+async function setupTauri() {
+  // Closing the window must hide it, not destroy it: this webview owns the tray logic and the
+  // wake engine — destroy it and the tray menu turns into dead buttons ("Quit" still works,
+  // it's native). The app lives in the tray; reopen via any tray item.
+  const { getCurrentWindow } = await import('@tauri-apps/api/window');
+  void getCurrentWindow().onCloseRequested((e) => {
+    e.preventDefault();
+    void getCurrentWindow().hide();
+  });
+
+  const { TrayIcon } = await import('@tauri-apps/api/tray');
+  const { Menu, MenuItem, CheckMenuItem, Submenu, PredefinedMenuItem } = await import('@tauri-apps/api/menu');
+
+  // Mic picker submenu — starts with just "System default" and fills in asynchronously LATER:
+  // enumerating labels needs mic permission, and awaiting getUserMedia here would park the whole
+  // tray behind an unanswered permission prompt (measured: no tray icon at all until Allow).
+  const savedMic = localStorage.getItem(MIC_KEY) ?? '';
+  const micRefs: Array<{ label: string; item: { setChecked(c: boolean): Promise<void> } }> = [];
+  const pickMic = async (label: string) => {
+    if (label) localStorage.setItem(MIC_KEY, label);
+    else localStorage.removeItem(MIC_KEY);
+    for (const r of micRefs) void r.item.setChecked(r.label === label);
+    if (kit) { await stop(); await start(); } // apply to a live session immediately
+  };
+  const micMenu = await Submenu.new({ text: 'Microphone', items: [] });
+  const addMicItem = async (label: string) => {
+    const item = await CheckMenuItem.new({
+      text: label || 'System default',
+      checked: label === savedMic,
+      action: () => void pickMic(label),
+    });
+    micRefs.push({ label, item });
+    await micMenu.append(item);
+  };
+  await addMicItem('');
+  // header row: which persona this tray belongs to — disabled, it's a label not a button
+  const header = await MenuItem.new({ text: `AI: ${current()?.label ?? '—'}`, enabled: false });
+  trayHeader = header;
+  // state lives in the tray icon color (green = listening, red = stopped) — no checkbox
+  const listen = await MenuItem.new({
+    text: kit ? 'Stop listening' : 'Start listening',
+    // toggling on surfaces the window first: the mic permission prompt and any start error
+    // are invisible while the app sits behind other apps
+    action: () => { if (kit) void stop(); else { void showMainWindow(); void start(); } },
+  });
+  trayListen = listen;
+  const menu = await Menu.new({
+    items: [
+      header,
+      await PredefinedMenuItem.new({ item: 'Separator' }),
+      listen,
+      micMenu,
+      await MenuItem.new({ text: 'Voice commands…', action: () => { void showMainWindow(); openCmdDialog(); } }),
+      await PredefinedMenuItem.new({ item: 'Separator' }),
+      await PredefinedMenuItem.new({ item: 'Quit', text: 'Quit' }),
+    ],
+  });
+  tray = await TrayIcon.new({ icon: await trayFlower(kit ? '#16a34a' : '#ef4444'), menu, tooltip: 'wakekit' });
+  void setTrayState(!!kit); // auto-start may have finished before the tray existed — sync once
+
+  // Now (tray already up) prime mic permission and fill in the device list when it resolves.
+  void (async () => {
+    try {
+      (await navigator.mediaDevices.getUserMedia({ audio: true })).getTracks().forEach((t) => t.stop());
+    } catch { /* denied — the submenu keeps just System default */ }
+    const inputs = (await navigator.mediaDevices.enumerateDevices())
+      .filter((d) => d.kind === 'audioinput' && d.label);
+    for (const d of inputs) await addMicItem(d.label);
+  })();
+
+  // The Siri-style listening strip: created hidden once, shown/updated via events (demo/overlay.ts).
+  const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+  new WebviewWindow('overlay', {
+    url: 'overlay.html',
+    width: 480,
+    height: 76,
+    visible: false,
+    transparent: true,
+    decorations: false,
+    shadow: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    focus: false,
+    resizable: false,
+    visibleOnAllWorkspaces: true,
+  });
+}
+if (IS_TAURI) void setupTauri();
+
+function openCmdDialog() {
+  let dlg = document.getElementById('cmd-dialog') as HTMLDialogElement | null;
+  if (!dlg) {
+    dlg = document.createElement('dialog');
+    dlg.id = 'cmd-dialog';
+    dlg.innerHTML = `
+      <h3><span class="en">Voice commands</span><span class="th">คำสั่งเสียง</span></h3>
+      <p class="hint">
+        <span class="en">When a dictated line matches a word, its prompt runs through <code>claude -p</code> with the spoken text appended.</span>
+        <span class="th">เมื่อประโยคที่พูดตรงกับคำสั่ง ระบบจะส่ง prompt พร้อมข้อความที่พูดไปรัน <code>claude -p</code></span>
+      </p>
+      <ul id="cmd-list"></ul>
+      <form id="cmd-add">
+        <input name="word" required placeholder="คำสั่ง, อีกคำ / word, alias" />
+        <select name="match">
+          <option value="prefix">starts with / ขึ้นต้นด้วย</option>
+          <option value="include">includes / มีคำนี้</option>
+        </select>
+        <select name="type">
+          <option value="claude">claude -p</option>
+          <option value="chrome">chrome (Google search)</option>
+          <option value="youtube">YouTube search</option>
+        </select>
+        <input name="prompt" placeholder="prompt (claude -p เท่านั้น / claude only)" />
+        <button type="submit">+ <span class="en">add</span><span class="th">เพิ่ม</span></button>
+      </form>
+      <form method="dialog" class="cmd-close"><button><span class="en">close</span><span class="th">ปิด</span></button></form>`;
+    document.body.append(dlg);
+    const addForm = dlg.querySelector<HTMLFormElement>('#cmd-add')!;
+    addForm.onsubmit = (e) => {
+      e.preventDefault();
+      const fd = new FormData(addForm);
+      const type = ['chrome', 'youtube'].includes(String(fd.get('type'))) ? (fd.get('type') as 'chrome' | 'youtube') : 'claude';
+      voiceCmds.push({
+        word: String(fd.get('word')).trim(),
+        match: fd.get('match') === 'include' ? 'include' : 'prefix',
+        type,
+        prompt: String(fd.get('prompt')).trim(),
+      });
+      saveCmds();
+      addForm.reset();
+      renderCmdList();
+    };
+  }
+  renderCmdList();
+  dlg.showModal();
+}
+
+function renderCmdList() {
+  const ul = document.querySelector<HTMLUListElement>('#cmd-list');
+  if (!ul) return;
+  ul.innerHTML = '';
+  if (!voiceCmds.length) {
+    ul.innerHTML = '<li class="empty"><span class="en">no commands yet</span><span class="th">ยังไม่มีคำสั่ง</span></li>';
+    return;
+  }
+  voiceCmds.forEach((c, i) => {
+    const li = document.createElement('li');
+    const label = document.createElement('span');
+    label.textContent = `“${c.word}” (${c.match === 'include' ? 'includes' : 'starts with'}) → [${c.type ?? 'claude'}] ${c.prompt || ''}`.trimEnd();
+    const del = document.createElement('button');
+    del.textContent = '✕';
+    del.title = 'delete / ลบ';
+    del.onclick = () => { voiceCmds.splice(i, 1); saveCmds(); renderCmdList(); };
+    li.append(label, del);
+    ul.append(li);
+  });
+}
 
 // ---- Hero portrait — จาร์วิส first, then ละดา, crossfading in a loop.
 const HERO = [

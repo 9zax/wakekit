@@ -34,3 +34,8 @@ scripts/f5.py
 scripts/f5-README.md
 scripts/f5-setup.sh
 __pycache__/
+
+# tauri desktop app
+src-tauri/target/
+src-tauri/binaries/
+src-tauri/gen/

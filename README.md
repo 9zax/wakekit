@@ -37,6 +37,23 @@ npm run dev        # → http://localhost:5173 — pick a wake word, press start
 The test page shows the live score trace, per-model thresholds, detections, and everything on this
 page — picker included — is driven by `models/manifest.json`.
 
+## macOS app
+
+A menu-bar voice assistant built on the same engine: always-listening wake word, Thai dictation,
+and voice commands ("เปิดเพลง …" opens a YouTube search; add your own commands in the tray —
+pipe to `claude -p`, search Chrome, or search YouTube). Apple Silicon only.
+
+```sh
+brew install --cask 9zax/tap/wakekit
+```
+
+Ad-hoc signed — if macOS refuses the first launch:
+`xattr -dr com.apple.quarantine /Applications/WakeKit.app`.
+The flower in the menu bar is the state: green = listening, red = stopped.
+
+Build from source: `npm install && npm run app:build` (needs Rust + Xcode CLT; the STT sidecar
+and app icons build automatically).
+
 ## Use the library
 
 ```bash

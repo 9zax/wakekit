@@ -134,11 +134,17 @@ export class WakeKit {
  * ponytail: ScriptProcessorNode — deprecated but universal, and one node with no worklet file to
  * host. Swap for an AudioWorklet if the ~4096-sample latency or the deprecation ever bites.
  */
-export async function listenMic(kit: WakeKit): Promise<() => void> {
+export async function listenMic(kit: WakeKit, deviceId?: string): Promise<() => void> {
   const stream = await navigator.mediaDevices.getUserMedia({
-    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    audio: {
+      ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
+      echoCancellation: true, noiseSuppression: true, autoGainControl: true,
+    },
   });
   const ctx = new AudioContext();
+  // Started without a user gesture (e.g. a tray-menu toggle in a desktop shell) WebKit parks the
+  // context 'suspended' and ScriptProcessor never fires — resume() is a no-op when already running.
+  if (ctx.state === 'suspended') void ctx.resume();
   const src = ctx.createMediaStreamSource(stream);
   const proc = ctx.createScriptProcessor(4096, 1, 1);
   proc.onaudioprocess = (e) => {

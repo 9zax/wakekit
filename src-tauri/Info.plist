@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>LSUIElement</key>
+  <true/>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Wake-word detection and Thai dictation use the microphone. / ใช้ไมโครโฟนเพื่อตรวจจับคำปลุกและถอดเสียงภาษาไทย</string>
+  <key>NSSpeechRecognitionUsageDescription</key>
+  <string>Thai dictation uses Apple speech recognition. / การถอดเสียงภาษาไทยใช้ระบบรู้จำเสียงของ Apple</string>
+</dict>
+</plist>

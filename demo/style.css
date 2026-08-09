@@ -283,3 +283,35 @@ footer { margin-top: 96px; border-top: 4px solid var(--black); padding-top: 1rem
 table tr.pending td { color: #a3a3a3; }
 .tag-pending { font-family: 'Space Mono', monospace; font-size: 12px; color: #ca8a04; white-space: nowrap; }
 .tag-ready { font-family: 'Space Mono', monospace; font-size: 12px; color: #16a34a; white-space: nowrap; }
+
+/* Voice-command settings dialog — Tauri app only, opened from the tray */
+#cmd-dialog { border: 4px solid var(--black); padding: 1.2rem 1.4rem; max-width: 560px; width: 90vw; }
+#cmd-dialog::backdrop { background: rgba(0, 0, 0, 0.4); }
+#cmd-dialog h3 { margin: 0 0 0.5rem; }
+#cmd-list { list-style: none; padding: 0; margin: 0.8rem 0; }
+#cmd-list li { display: flex; align-items: center; gap: 0.6rem; padding: 0.3rem 0; font-size: 14px; }
+#cmd-list li span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#cmd-list li.empty { color: var(--dim); }
+#cmd-add { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.8rem; }
+#cmd-add input[name="word"] { width: 10rem; }
+#cmd-add input[name="prompt"] { flex: 1; min-width: 14rem; }
+.cmd-close { text-align: right; }
+
+/* Reply-mode toggle — 🔔 tone vs 🗣 voice, a two-button segment in the controls row */
+.ack-toggle { display: inline-flex; }
+.ack-toggle button { background: #fff; color: var(--text); border: 3px solid var(--black); padding: 0.45rem 0.8rem; }
+.ack-toggle button + button { border-left: 0; }
+.ack-toggle button.on { background: var(--black); color: #fff; }
+.ack-toggle button svg { vertical-align: -0.15em; margin-right: 2px; }
+.ack-toggle button:hover { background: var(--red); border-color: var(--black); color: #fff; }
+
+/* Tauri app — the window is just the settings panel: controls + status + transcript.
+   The full site (hero, zoo, docs, train) stays web-only. */
+body.tauri header .tagline, body.tauri header figure.lada,
+body.tauri .test-head, body.tauri #test > .hint,
+body.tauri #trace, body.tauri .trace-caption,
+body.tauri #hits, body.tauri #test h3:has(+ #hits), body.tauri #stt-privacy,
+body.tauri section:not(#test), body.tauri footer { display: none; }
+body.tauri h1 { font-size: 42px; margin-bottom: 0; }
+body.tauri header { margin-bottom: 0; }
+body.tauri section { margin-top: 8px; }

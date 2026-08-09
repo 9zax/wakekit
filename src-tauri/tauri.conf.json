@@ -1,0 +1,35 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "WakeKit",
+  "version": "0.1.0",
+  "identifier": "com.wakekit.demo",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": "npm run build:sidecar && npm run dev",
+    "beforeBuildCommand": "npm run build:sidecar && npm run build"
+  },
+  "app": {
+    "macOSPrivateApi": true,
+    "windows": [
+      {
+        "title": "wakekit",
+        "width": 620,
+        "height": 640
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app"],
+    "icon": ["icons/icon.icns"],
+    "externalBin": ["binaries/stt-th"],
+    "macOS": {
+      "minimumSystemVersion": "12.3",
+      "entitlements": "entitlements.plist"
+    }
+  }
+}

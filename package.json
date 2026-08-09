@@ -37,6 +37,10 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:sidecar": "mkdir -p src-tauri/binaries && swiftc -O src-tauri/stt-th.swift -o src-tauri/binaries/stt-th-aarch64-apple-darwin -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __info_plist -Xlinker src-tauri/stt-th-Info.plist && codesign -f -s - src-tauri/binaries/stt-th-aarch64-apple-darwin",
+    "tauri": "tauri",
+    "app:dev": "tauri dev",
+    "app:build": "tauri build",
     "typecheck": "tsc --noEmit",
     "build:lib": "rm -rf lib && tsc -p tsconfig.lib.json && sed -i '' \"s|'./worker.ts'|'./worker.js'|\" lib/index.js",
     "prepublishOnly": "npm run typecheck && npm run build:lib && npm run selfcheck",
@@ -44,12 +48,16 @@
     "selfcheck": "esbuild src/selfcheck.ts --bundle --format=esm --platform=node --external:onnxruntime-web > .wkc.mjs && node .wkc.mjs eval/clips; s=$?; rm -f .wkc.mjs; exit $s"
   },
   "dependencies": {
+    "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/plugin-opener": "^2.5.4",
+    "@tauri-apps/plugin-shell": "^2.3.5",
     "onnxruntime-web": "^1.27.0"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.11.4",
+    "esbuild": "^0.24.0",
     "highlight.js": "^11.11.1",
     "thinking-orbs": "^0.2.0",
-    "esbuild": "^0.24.0",
     "typescript": "^5.6.3",
     "vite": "^5.4.11"
   }

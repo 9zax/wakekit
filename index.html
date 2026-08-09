@@ -61,6 +61,12 @@
         <label><span><span class="en">Threshold</span><span class="th">ค่าเกณฑ์</span> <span id="thr-val"></span></span>
           <input id="thr" type="range" min="0.05" max="0.995" step="0.005" />
         </label>
+        <label><span class="en">Reply</span><span class="th">เสียงตอบ</span>
+          <span class="ack-toggle" role="group">
+            <button id="ack-tone" type="button"><svg viewBox="0 0 24 24" width="1em" height="1em" fill="currentColor" aria-hidden="true"><path d="M12 2a7 7 0 0 0-7 7v4l-2 3v1h18v-1l-2-3V9a7 7 0 0 0-7-7Z"/><path d="M9.5 19a2.5 2.5 0 0 0 5 0Z"/></svg> <span class="en">tone</span><span class="th">โทน</span></button>
+            <button id="ack-voice" type="button"><svg viewBox="0 0 24 24" width="1em" height="1em" fill="currentColor" aria-hidden="true"><rect x="2" y="9" width="3" height="6"/><rect x="7" y="5" width="3" height="14"/><rect x="12" y="2" width="3" height="20"/><rect x="17" y="7" width="3" height="10"/></svg> <span class="en">voice</span><span class="th">พูด</span></button>
+          </span>
+        </label>
         <button id="toggle">▶ Start listening</button>
       </div>
 

@@ -1,0 +1,34 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "wake-word demo: STT sidecar, claude commands, YouTube opener, tray, listening overlay",
+  "windows": ["main", "overlay"],
+  "permissions": [
+    "core:default",
+    {
+      "identifier": "shell:allow-spawn",
+      "allow": [{ "name": "binaries/stt-th", "sidecar": true, "args": true }]
+    },
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [{ "name": "run-claude", "cmd": "/bin/zsh", "args": true }]
+    },
+    "shell:allow-stdin-write",
+    "shell:allow-kill",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [{ "url": "https://www.youtube.com/*" }, { "url": "https://www.google.com/*" }]
+    },
+    "core:image:allow-new",
+    "core:tray:allow-set-icon",
+    "core:webview:allow-create-webview-window",
+    "core:window:allow-show",
+    "core:window:allow-hide",
+    "core:window:allow-unminimize",
+    "core:window:allow-set-focus",
+    "core:window:allow-set-position",
+    "core:window:allow-outer-size",
+    "core:window:allow-current-monitor",
+    "core:window:allow-set-ignore-cursor-events"
+  ]
+}
