@@ -401,38 +401,39 @@ function addFinal(text: string) {
 }
 
 // ---- Voice commands — finals only (interims revise themselves too much to act on).
-// `type` picks what a match does: 'claude' pipes to `claude -p` (default, old entries have no
-// field), 'chrome' Google-searches the argument in Chrome, 'youtube' searches YouTube.
-type VoiceCmd = { word: string; match: 'prefix' | 'include'; type?: 'claude' | 'chrome' | 'youtube'; prompt: string };
-const CMDS_KEY = 'wakekit-voice-cmds';
-let voiceCmds: VoiceCmd[] = [];
-try { voiceCmds = JSON.parse(localStorage.getItem(CMDS_KEY) ?? '[]'); } catch { /* corrupt — start empty */ }
-const saveCmds = () => localStorage.setItem(CMDS_KEY, JSON.stringify(voiceCmds));
+// Built-ins come from demo/builtins.ts; the user's own list is edited in the commands window
+// (demo/commands.ts) and arrives here over 'cmds-changed'. `type` picks what a match does:
+// 'claude' pipes to `claude -p` (default, old entries have no field), 'chrome' Google-searches
+// the argument in Chrome, 'youtube' searches YouTube.
+import {
+  BUILTIN, flexMatch, loadCmds, newsFeed, NEWS_COUNTS, NEWS_MARKETS, NEWS_N_KEY, OPACITIES,
+  OPACITY_KEY, parseDdg, parseNews, parseOgImage, resultUrl,
+  type NewsItem, type Pip, type VoiceCmd,
+} from './builtins';
+let voiceCmds: VoiceCmd[] = loadCmds();
 
 async function openExternal(url: string, app?: string) {
   if (IS_TAURI) void (await import('@tauri-apps/plugin-opener')).openUrl(url, app);
   else window.open(url, '_blank');
 }
 
-// `word` may hold comma-separated aliases; Thai recognizers insert spaces unpredictably, so each
-// alias matches with optional whitespace between its characters ('^'-anchored for prefix).
-// Returns the text AFTER the match — the command's argument — or null when nothing matches.
-function flexMatch(t: string, c: VoiceCmd): string | null {
-  for (const alias of c.word.split(',').map((w) => w.replace(/\s+/g, '')).filter(Boolean)) {
-    const re = new RegExp((c.match === 'include' ? '' : '^') +
-      alias.split('').map((ch) => ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s*'));
-    const m = re.exec(t);
-    if (m) return t.slice(m.index + m[0].length).trim();
-  }
-  return null;
+// Results land in the floating card (demo/pip.ts). The website has no such window, so there it
+// stays what it always was: a link handed to the browser.
+function showPip(p: Pip) {
+  if (!IS_TAURI) { const u = resultUrl(p); if (u) void openExternal(u); return; }
+  void import('@tauri-apps/api/event').then(({ emit }) => emit('pip', p));
 }
 
 function handleCommand(t: string) {
-  const m = t.match(/^เปิด\s*เพลง\s*(.+)/); // built-in — works on the website too
-  if (m) {
-    const song = m[1].trim();
-    void openExternal(`https://www.youtube.com/results?search_query=${encodeURIComponent(song)}`);
-    showSttToast(`▶ ${song}`);
+  for (const b of BUILTIN) { // built-ins work on the website too
+    const arg = flexMatch(t, b);
+    if (arg === null || (b.needsArg && !arg)) continue;
+    showSttToast(b.toast(arg));
+    const p = b.run(arg);
+    // both of these need the network before there is anything to show
+    if (p.kind === 'video' && IS_TAURI) void playVideo(p.q);
+    else if (p.kind === 'news' && IS_TAURI) void newsSearch(p.q);
+    else showPip(p);
     return;
   }
   if (!IS_TAURI) return; // user-defined commands are desktop-app only
@@ -442,16 +443,140 @@ function handleCommand(t: string) {
     const q = arg || t; // bare command word — fall back to the whole utterance
     const type = c.type ?? 'claude';
     if (type === 'chrome') {
-      void openExternal(`https://www.google.com/search?q=${encodeURIComponent(q)}`, 'Google Chrome');
       showSttToast(`🔎 ${q}`);
+      void webSearch(q);
     } else if (type === 'youtube') {
-      void openExternal(`https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`);
       showSttToast(`▶ ${q}`);
+      void playVideo(q);
     } else {
       void runClaudeCmd(c, t);
     }
     return; // first matching command wins
   }
+}
+
+// A results page can't be read cross-origin from a webview, so the fetch runs in a shell. curl is
+// doing what a browser tab would; keep the desktop UA or the site may serve a stripped page.
+const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15';
+const shq = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
+async function sh(cmd: string): Promise<{ code: number | null; stdout: string }> {
+  const { Command } = await import('@tauri-apps/plugin-shell');
+  const out = await Command.create('sh', ['-lc', cmd]).execute(); // login shell → homebrew is on PATH
+  return { code: out.code, stdout: out.stdout };
+}
+
+// yt-dlp searches AND hands back a direct stream, which the card plays in a plain <video>. The
+// YouTube iframe player is not an option: it refuses to run with error 153 because a webview page
+// served from tauri://localhost has no http origin for it to accept.
+// ponytail: needs yt-dlp on PATH (brew install yt-dlp). Without it the card offers the browser.
+async function playVideo(q: string) {
+  const p: Pip = { kind: 'video', q };
+  try {
+    const out = await sh(`yt-dlp -f 'best[ext=mp4][acodec!=none][vcodec!=none]' --no-warnings`
+      + ` --print '%(title)s' --print urls ${shq(`ytsearch1:${q}`)}`);
+    const [title, src] = out.stdout.trim().split('\n');
+    if (src?.startsWith('http')) { p.src = src; p.title = title; }
+  } catch { /* no yt-dlp / offline — the card offers the browser */ }
+  showPip(p);
+}
+
+// Five stories, five windows — one per story, laid out edge to edge so none covers another, each
+// fading in 200 ms after the one before it. Each window carries its story in its own URL: they are
+// created after the fact, and an event fired at creation time would arrive before it can listen.
+// Fixed tiles, not auto-fitted ones: the layout can only guarantee "no window covers another" if
+// every window is the size the layout thinks it is.
+const NEWS_W = 300;
+const NEWS_H = 232;
+const NEWS_GAP = 14; // the padding between one story's window and the next
+const NEWS_TOP = 44; // clear of the menu bar
+let newsWins: Array<{ close(): Promise<void> }> = [];
+
+async function newsSearch(q: string) {
+  const want = Number(localStorage.getItem(NEWS_N_KEY) ?? 5);
+  const items: NewsItem[] = [];
+  try {
+    // One market rarely has enough on a niche topic, so keep pulling the next one until the ask is
+    // filled. Whatever the last market has is what you get — no padding with unrelated stories.
+    for (const mkt of NEWS_MARKETS) {
+      if (items.length >= want) break;
+      const more = parseNews((await sh(`curl -sL --max-time 10 -A '${UA}' '${newsFeed(q, mkt)}'`)).stdout, want);
+      for (const n of more) if (items.length < want && !items.some((o) => o.url === n.url)) items.push(n);
+    }
+  } catch { /* offline / curl failed — falls through to the single card below */ }
+  if (!items.length) return showPip({ kind: 'news', q });
+
+  // Covers first, in parallel: the card's height depends on whether it has one, and the tiling
+  // below needs each window's final height to place the next one under it.
+  await Promise.all(items.map(async (n) => {
+    try { n.img = parseOgImage((await sh(`curl -sL --max-time 8 -A '${UA}' '${n.url.replace(/'/g, '%27')}'`)).stdout) ?? undefined; }
+    catch { /* no cover — that card is text only */ }
+  }));
+
+  for (const w of newsWins.splice(0)) await w.close().catch(() => { /* already gone */ });
+  const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+  const { currentMonitor } = await import('@tauri-apps/api/window');
+  const mon = await currentMonitor();
+  // logical px: monitor sizes are physical, window x/y are not
+  const scale = mon?.scaleFactor ?? 1;
+  const monX = (mon?.position.x ?? 0) / scale;
+  const monY = (mon?.position.y ?? 0) / scale;
+  const monW = (mon?.size.width ?? 1440) / scale;
+  const monH = (mon?.size.height ?? 900) / scale;
+  const right = monX + monW - NEWS_GAP - NEWS_W; // anchored to the right edge, columns grow leftward
+
+  // Each card is as tall as its own content, so the next one can only be placed once the previous
+  // has measured itself and reported back. Column runs from the top; a full column starts a new one.
+  const { listen: onEvent } = await import('@tauri-apps/api/event');
+  const pending = new Map<number, (h: number) => void>();
+  const stopListening = await onEvent<{ i: number; h: number }>('news-h', (e) => pending.get(e.payload.i)?.(e.payload.h));
+  let y = monY + NEWS_TOP;
+  let col = 0;
+
+  for (const [i, n] of items.entries()) {
+    if (y + NEWS_H > monY + monH - 20 && i > 0) { col++; y = monY + NEWS_TOP; } // column full → next one, from the top
+    const p = new URLSearchParams({ kind: 'news', i: String(i), q, title: n.title, source: n.source, url: n.url, iso: n.iso, ...(n.img ? { img: n.img } : {}) });
+    newsWins.push(new WebviewWindow(`news-${i}`, {
+      url: `pip.html?${p}`,
+      width: NEWS_W,
+      height: NEWS_H,
+      x: right - col * (NEWS_W + NEWS_GAP),
+      y,
+      transparent: true,
+      decorations: false,
+      alwaysOnTop: true,
+      skipTaskbar: true,
+      visibleOnAllWorkspaces: true,
+      focus: false,
+      focusable: false,
+      acceptFirstMouse: true,
+      resizable: false,
+      shadow: false,
+      theme: 'dark',
+    }));
+    // Its own measured height, or the nominal one if it never reports (a card that failed to load
+    // must not stack the rest on top of each other).
+    const h = await new Promise<number>((res) => {
+      pending.set(i, res);
+      setTimeout(() => res(NEWS_H), 1500);
+    });
+    pending.delete(i);
+    y += h + NEWS_GAP;
+    await new Promise((r) => setTimeout(r, 200)); // the stagger you see as them opening one by one
+  }
+  stopListening();
+}
+
+// DuckDuckGo's HTML endpoint, not Google: Google answers curl with a consent wall and refuses to
+// be framed, so there would be nothing to render.
+async function webSearch(q: string) {
+  const p: Pip = { kind: 'search', q };
+  try {
+    // encodeURIComponent leaves ' alone and the URL sits in a single-quoted shell string —
+    // percent-encode it rather than stripping, so "don't stop" still searches for what was said.
+    const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(q).replace(/'/g, '%27')}`;
+    p.results = parseDdg((await sh(`curl -sL --max-time 10 -A '${UA}' '${url}'`)).stdout);
+  } catch { /* offline / curl failed — the card offers the browser */ }
+  showPip(p);
 }
 
 async function runClaudeCmd(cmd: VoiceCmd, text: string) {
@@ -462,7 +587,7 @@ async function runClaudeCmd(cmd: VoiceCmd, text: string) {
   const out = await Command.create('run-claude', ['-lc',
     `claude -p ${quote(`${cmd.prompt}\n\nUser said: ${text}`)}`]).execute();
   const reply = (out.stdout || out.stderr).trim();
-  showSttToast(reply ? `🤖 ${reply.slice(0, 300)}` : `🤖 exit ${out.code}`);
+  showPip({ kind: 'text', title: cmd.word, body: reply || `exit ${out.code}` });
 }
 
 function resetSttPanel() {
@@ -958,6 +1083,43 @@ async function setupTauri() {
     await micMenu.append(item);
   };
   await addMicItem('');
+
+  // Card opacity — 50 % you can read the desktop through, 100 % solid. Pushed live so the cards
+  // already on screen change as you pick, and stored so the next one opens the same way.
+  const savedOpacity = Number(localStorage.getItem(OPACITY_KEY) ?? 100);
+  const opacityRefs: Array<{ pct: number; item: { setChecked(c: boolean): Promise<void> } }> = [];
+  const opacityMenu = await Submenu.new({ text: 'Card opacity', items: [] });
+  for (const pct of OPACITIES) {
+    const item = await CheckMenuItem.new({
+      text: pct === 100 ? '100% (solid)' : `${pct}%`,
+      checked: pct === savedOpacity,
+      action: () => void (async () => {
+        localStorage.setItem(OPACITY_KEY, String(pct));
+        for (const r of opacityRefs) void r.item.setChecked(r.pct === pct);
+        (await import('@tauri-apps/api/event')).emit('opacity', pct);
+      })(),
+    });
+    opacityRefs.push({ pct, item });
+    await opacityMenu.append(item);
+  }
+
+  // How many stories "…ข่าว" opens. Read at command time, so no live push needed.
+  const savedCount = Number(localStorage.getItem(NEWS_N_KEY) ?? 5);
+  const countRefs: Array<{ n: number; item: { setChecked(c: boolean): Promise<void> } }> = [];
+  const countMenu = await Submenu.new({ text: 'News stories', items: [] });
+  for (const n of NEWS_COUNTS) {
+    const item = await CheckMenuItem.new({
+      text: `${n}`,
+      checked: n === savedCount,
+      action: () => {
+        localStorage.setItem(NEWS_N_KEY, String(n));
+        for (const r of countRefs) void r.item.setChecked(r.n === n);
+      },
+    });
+    countRefs.push({ n, item });
+    await countMenu.append(item);
+  }
+
   // header row: which persona this tray belongs to — disabled, it's a label not a button
   const header = await MenuItem.new({ text: `AI: ${current()?.label ?? '—'}`, enabled: false });
   trayHeader = header;
@@ -975,7 +1137,9 @@ async function setupTauri() {
       await PredefinedMenuItem.new({ item: 'Separator' }),
       listen,
       micMenu,
-      await MenuItem.new({ text: 'Voice commands…', action: () => { void showMainWindow(); openCmdDialog(); } }),
+      opacityMenu,
+      countMenu,
+      await MenuItem.new({ text: 'Voice commands…', action: () => void openCmdWindow() }),
       await PredefinedMenuItem.new({ item: 'Separator' }),
       await PredefinedMenuItem.new({ item: 'Quit', text: 'Quit' }),
     ],
@@ -993,6 +1157,10 @@ async function setupTauri() {
     for (const d of inputs) await addMicItem(d.label);
   })();
 
+  // The commands window owns the list; take its edits live so a new command works without a restart.
+  const { listen: onEvent } = await import('@tauri-apps/api/event');
+  void onEvent<VoiceCmd[]>('cmds-changed', (e) => { voiceCmds = e.payload; });
+
   // The Siri-style listening strip: created hidden once, shown/updated via events (demo/overlay.ts).
   const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
   new WebviewWindow('overlay', {
@@ -1009,77 +1177,55 @@ async function setupTauri() {
     resizable: false,
     visibleOnAllWorkspaces: true,
   });
+
+  // The result card (demo/pip.ts). Created hidden at startup, not on the first result: Tauri events
+  // are not buffered, so the window has to be listening before anything is emitted to it.
+  new WebviewWindow('pip', {
+    url: 'pip.html',
+    width: 380,
+    height: 240,
+    visible: false,
+    transparent: true,
+    decorations: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    visibleOnAllWorkspaces: true,
+    focus: false,
+    focusable: false, // clickable, but never becomes key — your typing stays in the app you were in
+    acceptFirstMouse: true, // ...so the first click acts on the control instead of just waking it
+    resizable: false,
+    // No windowEffects: the native material can only be rounded through a private setCornerRadius:
+    // that no longer takes on this macOS, so it drew a square slab behind our rounded card. The
+    // page paints its own translucent background instead — real rounded corners, no blur.
+    shadow: false, // ...and the window shadow would trace that square too
+    theme: 'dark',
+  });
 }
 if (IS_TAURI) void setupTauri();
 
-function openCmdDialog() {
-  let dlg = document.getElementById('cmd-dialog') as HTMLDialogElement | null;
-  if (!dlg) {
-    dlg = document.createElement('dialog');
-    dlg.id = 'cmd-dialog';
-    dlg.innerHTML = `
-      <h3><span class="en">Voice commands</span><span class="th">คำสั่งเสียง</span></h3>
-      <p class="hint">
-        <span class="en">When a dictated line matches a word, its prompt runs through <code>claude -p</code> with the spoken text appended.</span>
-        <span class="th">เมื่อประโยคที่พูดตรงกับคำสั่ง ระบบจะส่ง prompt พร้อมข้อความที่พูดไปรัน <code>claude -p</code></span>
-      </p>
-      <ul id="cmd-list"></ul>
-      <form id="cmd-add">
-        <input name="word" required placeholder="คำสั่ง, อีกคำ / word, alias" />
-        <select name="match">
-          <option value="prefix">starts with / ขึ้นต้นด้วย</option>
-          <option value="include">includes / มีคำนี้</option>
-        </select>
-        <select name="type">
-          <option value="claude">claude -p</option>
-          <option value="chrome">chrome (Google search)</option>
-          <option value="youtube">YouTube search</option>
-        </select>
-        <input name="prompt" placeholder="prompt (claude -p เท่านั้น / claude only)" />
-        <button type="submit">+ <span class="en">add</span><span class="th">เพิ่ม</span></button>
-      </form>
-      <form method="dialog" class="cmd-close"><button><span class="en">close</span><span class="th">ปิด</span></button></form>`;
-    document.body.append(dlg);
-    const addForm = dlg.querySelector<HTMLFormElement>('#cmd-add')!;
-    addForm.onsubmit = (e) => {
-      e.preventDefault();
-      const fd = new FormData(addForm);
-      const type = ['chrome', 'youtube'].includes(String(fd.get('type'))) ? (fd.get('type') as 'chrome' | 'youtube') : 'claude';
-      voiceCmds.push({
-        word: String(fd.get('word')).trim(),
-        match: fd.get('match') === 'include' ? 'include' : 'prefix',
-        type,
-        prompt: String(fd.get('prompt')).trim(),
-      });
-      saveCmds();
-      addForm.reset();
-      renderCmdList();
-    };
-  }
-  renderCmdList();
-  dlg.showModal();
-}
+// Drive a command without speaking: `wk.handleCommand('เปิดเพลง lada')` in the devtools console.
+if (import.meta.env.DEV) (window as unknown as { wk: unknown }).wk = { handleCommand, showPip };
 
-function renderCmdList() {
-  const ul = document.querySelector<HTMLUListElement>('#cmd-list');
-  if (!ul) return;
-  ul.innerHTML = '';
-  if (!voiceCmds.length) {
-    ul.innerHTML = '<li class="empty"><span class="en">no commands yet</span><span class="th">ยังไม่มีคำสั่ง</span></li>';
-    return;
-  }
-  voiceCmds.forEach((c, i) => {
-    const li = document.createElement('li');
-    const label = document.createElement('span');
-    label.textContent = `“${c.word}” (${c.match === 'include' ? 'includes' : 'starts with'}) → [${c.type ?? 'claude'}] ${c.prompt || ''}`.trimEnd();
-    const del = document.createElement('button');
-    del.textContent = '✕';
-    del.title = 'delete / ลบ';
-    del.onclick = () => { voiceCmds.splice(i, 1); saveCmds(); renderCmdList(); };
-    li.append(label, del);
-    ul.append(li);
+// The commands window (demo/commands.ts) is a window of its own, not a dialog in this webview.
+// It's created once and hides on close, so the handle stays valid — reopening is show + focus.
+let cmdWin: { show(): Promise<void>; setFocus(): Promise<void> } | null = null;
+async function openCmdWindow() {
+  if (cmdWin) { await cmdWin.show(); await cmdWin.setFocus(); return; }
+  const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+  cmdWin = new WebviewWindow('commands', {
+    url: 'commands.html',
+    title: 'คำสั่งเสียง / Voice commands',
+    width: 420,
+    height: 540,
+    // a macOS widget panel: no chrome, its rounded translucent background painted by the page
+    // itself (see the note on the pip window — the native material can't be rounded any more)
+    transparent: true,
+    decorations: false,
+    shadow: false,
+    theme: 'dark', // keeps native bits (select popups, scrollbars) dark like the panel
   });
 }
+
 
 // ---- Hero portrait — จาร์วิส first, then ละดา, crossfading in a loop.
 const HERO = [

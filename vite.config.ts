@@ -39,8 +39,12 @@ export default defineConfig({
   },
   // the esbuild pre-bundler doesn't apply the regex alias above — serve thinking-orbs as source
   optimizeDeps: { exclude: ['thinking-orbs'] },
-  // overlay.html is the Tauri app's always-on-top "Listening" window; harmless dead file on the website
-  build: { target: 'es2022', rollupOptions: { input: { main: 'index.html', overlay: 'overlay.html' } } },
+  // overlay.html (always-on-top "Listening" strip) and commands.html (the voice-command list) are
+  // the Tauri app's other two windows; harmless dead files on the website
+  build: {
+    target: 'es2022',
+    rollupOptions: { input: { main: 'index.html', overlay: 'overlay.html', commands: 'commands.html', pip: 'pip.html' } },
+  },
   plugins: [
     {
       name: 'ort-wasm-assets',

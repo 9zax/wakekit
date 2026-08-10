@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>คำสั่งเสียง / Voice commands</title>
+  <style>
+    /* A widget panel, not a page: the window itself is fully transparent and .panel below IS the
+       panel, so everything here paints in white on it. System fonts on purpose — the site's
+       webfonts would need the network to draw a tray panel. */
+    * { box-sizing: border-box; margin: 0; }
+    /* The panel background MUST live on .panel, not on html/body: a background on either of
+       those is propagated to the window canvas, painted as a plain rectangle that ignores
+       border-radius — that is what kept the corners square. Both stay transparent, and nothing
+       (no padding, no shadow) paints outside .panel, so the window is exactly the rounded card. */
+    html, body { background: transparent; }
+    body {
+      font: 400 13px/1.5 -apple-system, "SF Pro Text", "Noto Sans Thai", sans-serif;
+      color: #fff; user-select: none; overflow-x: hidden;
+    }
+    .panel {
+      /* Opaque. Any translucency here lets whatever sits behind bleed through as grey — over the
+         app's own white window that reads as dirt, not as depth, and there is no blur to hide it. */
+      background: #1c1c1e;
+      border-radius: 18px;
+      padding: 0 14px 16px; /* was on body, moved here with the background */
+    }
+    html[lang="th"] .en, html[lang="en"] .th { display: none; } /* same bilingual switch as the site */
+    .bar { display: flex; align-items: center; gap: 8px; padding: 10px 2px 12px; }
+    .bar h1 { flex: 1; font-size: 15px; font-weight: 600; }
+    .bar button {
+      width: 22px; height: 22px; border: 0; border-radius: 50%; cursor: pointer;
+      background: rgba(255, 255, 255, 0.16); color: #fff; font-size: 11px; line-height: 1;
+    }
+    .bar button:hover { background: rgba(255, 255, 255, 0.28); }
+    .card {
+      background: rgba(255, 255, 255, 0.09); border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 16px; padding: 12px 14px; margin-bottom: 12px;
+    }
+    .card h2 { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: rgba(255, 255, 255, 0.55); }
+    .hint { color: rgba(255, 255, 255, 0.5); font-size: 11.5px; margin-top: 2px; }
+    ul { list-style: none; padding: 0; margin: 8px 0 0; }
+    li { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-top: 1px solid rgba(255, 255, 255, 0.1); }
+    li:first-child { border-top: 0; }
+    li.empty { color: rgba(255, 255, 255, 0.4); }
+    /* the phrase to say, then where it goes — b and i are the two columns, not emphasis */
+    li span { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+    li b { flex: 1; font-weight: 500; user-select: text; }
+    li i {
+      font-style: normal; color: rgba(255, 255, 255, 0.5); text-align: right;
+      max-width: 58%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    li > button {
+      flex-shrink: 0; width: 20px; height: 20px; border: 0; border-radius: 50%; cursor: pointer;
+      background: rgba(255, 255, 255, 0.12); color: rgba(255, 255, 255, 0.75); font-size: 10px;
+    }
+    li > button:hover { background: #ef4444; color: #fff; }
+    form { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+    input, select {
+      font: inherit; color: #fff; padding: 6px 8px; border-radius: 8px;
+      background: rgba(255, 255, 255, 0.12); border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    input::placeholder { color: rgba(255, 255, 255, 0.4); }
+    input:focus, select:focus { outline: 1px solid rgba(255, 255, 255, 0.45); }
+    select option { color: #000; } /* the native popup draws on a light sheet */
+    input[name="word"] { width: 8.5rem; }
+    input[name="prompt"] { flex: 1; min-width: 9rem; }
+    form button[type="submit"] {
+      border: 0; border-radius: 8px; padding: 6px 12px; cursor: pointer;
+      background: rgba(255, 255, 255, 0.9); color: #111; font: 600 13px/1.5 inherit;
+    }
+  </style>
+</head>
+<body>
+ <div class="panel" id="panel">
+  <!-- no title bar: this strip is the window's drag handle -->
+  <div class="bar" data-tauri-drag-region>
+    <h1 data-tauri-drag-region><span class="en">Voice commands</span><span class="th">คำสั่งเสียง</span></h1>
+    <button id="close" title="close / ปิด">✕</button>
+  </div>
+  <section class="card">
+    <p class="hint" id="cmd-wake"></p>
+    <ul id="cmd-builtin"></ul>
+  </section>
+  <section class="card">
+    <h2><span class="en">Your commands</span><span class="th">คำสั่งของคุณ</span></h2>
+    <p class="hint">
+      <span class="en">A matching line runs its prompt through <code>claude -p</code>.</span>
+      <span class="th">ประโยคที่ตรงกับคำสั่ง จะส่ง prompt ไปรัน <code>claude -p</code></span>
+    </p>
+    <ul id="cmd-list"></ul>
+    <form id="cmd-add">
+      <input name="word" required placeholder="คำสั่ง, อีกคำ / word, alias" />
+      <select name="match">
+        <option value="prefix">ขึ้นต้นด้วย / starts with</option>
+        <option value="include">มีคำนี้ / includes</option>
+      </select>
+      <select name="type">
+        <option value="claude">claude -p</option>
+        <option value="chrome">Google</option>
+        <option value="youtube">YouTube</option>
+      </select>
+      <input name="prompt" placeholder="prompt (claude -p)" />
+      <button type="submit">+</button>
+    </form>
+  </section>
+ </div>
+  <script type="module" src="/demo/commands.ts"></script>
+</body>
+</html>
