@@ -51,6 +51,11 @@ Ad-hoc signed — if macOS refuses the first launch:
 `xattr -dr com.apple.quarantine /Applications/WakeKit.app`.
 The flower in the menu bar is the state: green = listening, red = stopped.
 
+Dictation is Apple's, so a Mac that has never dictated Thai needs it turned on once — System
+Settings › Keyboard › Dictation, with ไทย in its languages — and WakeKit ticked under Privacy &
+Security › Speech Recognition and Microphone. Without those the wake word still fires but nothing
+is transcribed; the app says which one is missing on the listening strip.
+
 Build from source: `npm install && npm run app:build` (needs Rust + Xcode CLT; the STT sidecar
 and app icons build automatically).
 

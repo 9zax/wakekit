@@ -73,6 +73,16 @@ const STRINGS = {
   sttMic: ['microphone blocked — allow mic access to dictate', 'ไมโครโฟนถูกบล็อก — ต้องอนุญาตให้ใช้ไมค์ก่อน'],
   sttError: ['dictation stopped — still listening for the wake word', 'ถอดเสียงหยุดกลางคัน — แต่ยังฟังคำปลุกให้อยู่'],
   sttNoService: ['no reply from the speech service — this browser may not include one; try Chrome or Edge', 'บริการถอดเสียงไม่ตอบกลับ — เบราว์เซอร์นี้อาจไม่มีบริการนี้ ลองใช้ Chrome หรือ Edge แท้'],
+  // App-only: the sidecar's two blockers on a machine that has never dictated Thai. Both are
+  // settings the app cannot flip for you, so the message has to name the exact panel.
+  sttAuth: [
+    'Speech Recognition is off for WakeKit — allow it in System Settings › Privacy & Security › Speech Recognition (and Microphone)',
+    'ยังไม่ได้อนุญาต Speech Recognition ให้ WakeKit — เปิดใน System Settings › Privacy & Security › Speech Recognition (และ Microphone)',
+  ],
+  sttNoThai: [
+    'Thai dictation is not ready — turn Dictation on and add ไทย in System Settings › Keyboard › Dictation, then try again',
+    'ยังใช้ถอดเสียงไทยไม่ได้ — เปิด Dictation แล้วเพิ่มภาษาไทยใน System Settings › Keyboard › Dictation แล้วลองใหม่',
+  ],
 } as const;
 const L = (k: keyof typeof STRINGS) => STRINGS[k][document.documentElement.lang === 'th' ? 1 : 0];
 
@@ -342,8 +352,11 @@ function setSttState(text: string, cls = '') {
 function sttErrorLabel(code: string): string {
   if (code === 'no-speech') return L('sttNoSpeech');
   if (code === 'network') return L('sttNetwork');
-  if (code === 'not-allowed' || code === 'service-not-allowed') return L('sttMic');
-  if (code === 'no-service') return L('sttNoService'); // our watchdog, not a Chrome code
+  // The app's codes come from the Swift sidecar, and mean something else than the browser's:
+  // 'not-allowed' is the TCC prompt (speech OR mic), 'no-service' is SFSpeechRecognizer having no
+  // th-TH — a fresh Mac that has never dictated Thai has neither, which is the whole bug report.
+  if (code === 'not-allowed' || code === 'service-not-allowed') return IS_TAURI ? L('sttAuth') : L('sttMic');
+  if (code === 'no-service') return IS_TAURI ? L('sttNoThai') : L('sttNoService'); // our watchdog, not a Chrome code
   return `${L('sttError')} (${code})`; // audio-capture etc. — show the raw code, it's the only clue we get
 }
 
@@ -750,13 +763,13 @@ async function startDictationTauri() {
     cmd.on('close', () => { if (gen === sidecarGen) endDictationTauri(); });
     cmd.on('error', (e) => {
       showSttToast(`⚠ stt: ${String(e)}`); // toast mirrors onto the overlay — visible over any app
-      if (gen === sidecarGen) { sidecarError = 'no-service'; endDictationTauri(); }
+      if (gen === sidecarGen) { sidecarError = 'sidecar-failed'; endDictationTauri(); }
     });
     sidecarChild = await cmd.spawn();
   } catch (e) {
     console.warn('[wakekit demo] sidecar spawn failed:', e);
     showSttToast(`⚠ stt: ${e instanceof Error ? e.message : String(e)}`);
-    if (gen === sidecarGen) { sidecarError = 'no-service'; endDictationTauri(); }
+    if (gen === sidecarGen) { sidecarError = 'sidecar-failed'; endDictationTauri(); }
   }
 }
 
@@ -769,7 +782,12 @@ function endDictationTauri() {
   ensureSttEmptyState();
   clearTimeout(cooldownTimer);
   cooldownTimer = window.setTimeout(() => { dictating = false; }, 1500); // same FR-6 tail as endDictation
-  setSttState(sidecarError ? sttErrorLabel(sidecarError) : '', sidecarError ? 'error' : '');
+  const label = sidecarError ? sttErrorLabel(sidecarError) : '';
+  setSttState(label, sidecarError ? 'error' : '');
+  // The main window is normally hidden — this is a menu-bar app — so an error only written into
+  // its panel is an invisible one: dictation just never happens and nothing says why. Silence
+  // isn't an error worth interrupting for; anything else goes on the always-on-top overlay.
+  if (sidecarError && sidecarError !== 'no-speech') showSttToast(`⚠ ${label}`);
   sidecarError = '';
 }
 
