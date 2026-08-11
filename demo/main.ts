@@ -788,7 +788,22 @@ function endDictationTauri() {
   // its panel is an invisible one: dictation just never happens and nothing says why. Silence
   // isn't an error worth interrupting for; anything else goes on the always-on-top overlay.
   if (sidecarError && sidecarError !== 'no-speech') showSttToast(`⚠ ${label}`);
+  openSettingsFor(sidecarError);
   sidecarError = '';
+}
+
+// Neither blocker can be fixed from inside the app, so take the user to the panel that fixes it.
+// Once per code per launch: a wake word that yanks System Settings to the front every time you
+// speak would be worse than the bug it is reporting.
+const settingsShown = new Set<string>();
+function openSettingsFor(code: string) {
+  const pane = code === 'not-allowed'
+    ? 'x-apple.systempreferences:com.apple.preference.security?Privacy_SpeechRecognition'
+    : code === 'no-service' ? 'x-apple.systempreferences:com.apple.Keyboard-Settings.extension' : '';
+  if (!pane || settingsShown.has(code)) return;
+  settingsShown.add(code);
+  void import('@tauri-apps/plugin-shell')
+    .then(({ Command }) => Command.create('sh', ['-lc', `open "${pane}"`]).execute());
 }
 
 function abortDictation() {
