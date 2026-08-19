@@ -29,7 +29,7 @@ promote/
 .venv-f5/
 refs/
 .f5/
-lib/
+/lib/
 scripts/f5.py
 scripts/f5-README.md
 scripts/f5-setup.sh

@@ -1,0 +1,22 @@
+wakekit
+Copyright 2026 wakekit contributors
+
+This product includes components from openWakeWord
+(https://github.com/dscripka/openWakeWord), Copyright David Scripka,
+licensed under the Apache License 2.0:
+  - models/melspectrogram.onnx (feature extraction model)
+  - models/embedding_model.onnx (derived from Google's speech-embedding
+    model, https://tfhub.dev/google/speech_embedding/1, Apache License 2.0)
+  - the streaming feature pipeline and head architecture that
+    src/worker.ts and scripts/train.py implement.
+
+The trained wake word heads (the per-word models/<word>.onnx files) were trained
+by the wakekit project using synthetic speech (TTS voices).
+
+Runtime and demo dependencies (bundled in built distributions):
+  - ONNX Runtime Web (https://onnxruntime.ai/), Microsoft, MIT License
+  - highlight.js (https://highlightjs.org/), BSD-3-Clause License (demo only)
+  - thinking-orbs (https://www.npmjs.com/package/thinking-orbs), MIT License
+    (demo only)
+Their full license texts ship with the packages under node_modules/ and are
+preserved in built bundles.

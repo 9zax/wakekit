@@ -1,7 +1,7 @@
 // eval.mjs — score a wake-word model over a labelled clip directory and report the two
 // numbers that decide whether it can ship: recall, and false fires per minute.
 //
-// Run: node scripts/eval.mjs <clipDir> [model.onnx] [threshold]
+// Run: node scripts/eval.mjs <clipDir> [model.onnx] [threshold] [--json]
 //   clipDir/pos_*.wav        the wake word is spoken — must fire
 //   clipDir/neg_*.wav        it is not — must stay silent
 //
@@ -12,6 +12,10 @@
 // The headline number is false fires per MINUTE, not per clip. A streaming detector re-scores every
 // 80 ms, so "2% of windows" is not a small number — it is roughly one false fire every four
 // seconds. Per-clip rates flatter a model that per-minute rates expose.
+//
+// --json: instead of the human report, print { "<clip basename>": <peak score>, ... } to stdout —
+// the reference a port (e.g. flutter/) checks its own peak scores against. Additive: omit the
+// flag and output is unchanged.
 import * as ort from 'onnxruntime-web/wasm';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, basename } from 'node:path';
@@ -41,9 +45,11 @@ function wav16(path) {
   throw new Error(`no data chunk in ${path}`);
 }
 
-const dir = process.argv[2] ?? 'eval/clips';
-const modelPath = process.argv[3] ?? 'models/lada.onnx';
-const bar = Number(process.argv[4] ?? 0.5);
+const args = process.argv.slice(2).filter((a) => a !== '--json');
+const asJson = process.argv.includes('--json');
+const dir = args[0] ?? 'eval/clips';
+const modelPath = args[1] ?? 'models/lada.onnx';
+const bar = Number(args[2] ?? 0.5);
 
 const [mel, emb, head] = await Promise.all([
   load('models/melspectrogram.onnx'), load('models/embedding_model.onnx'), load(modelPath),
@@ -74,19 +80,27 @@ const files = readdirSync(dir).filter((f) => f.endsWith('.wav')).sort();
 const cat = (f) => (f.startsWith('pos_') ? 'pos' : f.replace(/^neg_/, 'neg_').split('_').slice(0, 2).join('_'));
 const stats = new Map();
 const worst = [];
+const peaks = {}; // clip basename -> peak score, for --json (a port's parity reference)
 
 for (const f of files) {
   const s = await scores(wav16(join(dir, f)));
-  if (!s.length) { console.log(`  ${f}: too short to score`); continue; }
+  const name = basename(f, '.wav');
+  if (!s.length) { peaks[name] = 0; if (!asJson) console.log(`  ${f}: too short to score`); continue; }
   const max = Math.max(...s);
+  peaks[name] = max;
   const over = s.filter((x) => x >= bar).length;
-  const k = cat(basename(f, '.wav'));
+  const k = cat(name);
   const st = stats.get(k) ?? { clips: 0, fired: 0, steps: 0, over: 0, maxes: [] };
   st.clips++; st.steps += s.length; st.over += over; st.maxes.push(max);
   if (over) st.fired++;
   stats.set(k, st);
   const isPos = k === 'pos';
-  if ((isPos && !over) || (!isPos && over)) worst.push(`${isPos ? 'MISS ' : 'FIRE '} ${basename(f, '.wav').padEnd(28)} max=${max.toFixed(3)}`);
+  if ((isPos && !over) || (!isPos && over)) worst.push(`${isPos ? 'MISS ' : 'FIRE '} ${name.padEnd(28)} max=${max.toFixed(3)}`);
+}
+
+if (asJson) {
+  console.log(JSON.stringify(peaks, null, 2));
+  process.exit(0);
 }
 
 console.log(`\nmodel ${modelPath}  threshold ${bar}\n`);

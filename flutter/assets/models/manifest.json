@@ -1,0 +1,120 @@
+[
+  {
+    "id": "lada",
+    "label": "ละดา (Thai)",
+    "lang": "th",
+    "gender": "female",
+    "file": "lada.onnx",
+    "threshold": 0.95,
+    "note": "Held-out (4 unseen voices): recall 100% (peaks 0.953+), silent on everyday speech and the other five names. Known confusable: 'ลัดดา' can fire — v1.1 (retrained on an open voice stack) will harden this.",
+    "eval": {
+      "voices": 4,
+      "posClips": 32,
+      "negClips": 300,
+      "recall": 1.0,
+      "falseFiresPerMin": 1.05
+    }
+  },
+  {
+    "id": "jarvis",
+    "label": "จาร์วิส (Jarvis)",
+    "lang": "th",
+    "gender": "male",
+    "file": "jarvis.onnx",
+    "threshold": 0.95,
+    "note": "Held-out (4 unseen voices): recall 100% (peaks 0.973+), zero false fires on everyday speech, rhymes (เซอร์วิส เดวิส เทรวิส วิสกี้ …) and all six sibling names' positives.",
+    "trainClips": 176,
+    "eval": {
+      "voices": 4,
+      "posClips": 32,
+      "negClips": 332,
+      "recall": 1.0,
+      "falseFiresPerMin": 0.0
+    }
+  },
+  {
+    "id": "wayu",
+    "label": "วายุ (Thai)",
+    "lang": "th",
+    "gender": "male",
+    "file": "wayu.onnx",
+    "threshold": 0.95,
+    "note": "Held-out (4 unseen voices): recall 100% (peaks 0.975+), silent on everyday speech and all six sibling names. Known confusables: 'วัยรุ่น' can fire, 'วายร้าย' rarely — next retrain will harden these.",
+    "trainClips": 180,
+    "eval": {
+      "voices": 4,
+      "posClips": 32,
+      "negClips": 348,
+      "recall": 1.0,
+      "falseFiresPerMin": 0.55
+    }
+  },
+  {
+    "id": "thapthim",
+    "label": "ทับทิม (Thai)",
+    "lang": "th",
+    "gender": "female",
+    "file": "thapthim.onnx",
+    "threshold": 0.95,
+    "note": "Held-out (4 unseen voices): recall 100% (peaks 0.978+), silent on everyday speech and all six sibling names. Known confusables: 'ทิ่มแทง', 'ทีมงาน', 'ทันที' can fire — next retrain will harden these.",
+    "trainClips": 184,
+    "eval": {
+      "voices": 4,
+      "posClips": 32,
+      "negClips": 332,
+      "recall": 1.0,
+      "falseFiresPerMin": 1.34
+    }
+  },
+  {
+    "id": "irin",
+    "label": "ไอริน (Thai)",
+    "lang": "th",
+    "gender": "female",
+    "file": "irin.onnx",
+    "threshold": 0.95,
+    "note": "Held-out (4 unseen voices): recall 100% (peaks 0.971+), silent on everyday speech and all six sibling names. Known confusables: 'ไอริส', 'รินน้ำ' can fire — next retrain will harden these.",
+    "trainClips": 180,
+    "eval": {
+      "voices": 4,
+      "posClips": 32,
+      "negClips": 340,
+      "recall": 1.0,
+      "falseFiresPerMin": 0.28
+    }
+  },
+  {
+    "id": "anda",
+    "label": "อันดา (Thai)",
+    "lang": "th",
+    "gender": "female",
+    "file": "anda.onnx",
+    "threshold": 0.95,
+    "note": "Held-out (4 unseen voices): recall 100% (peaks 0.976+), zero false fires on everyday speech, rhymes (อันดับ อันดามัน แพนด้า บันได …) and all six sibling names' positives.",
+    "trainClips": 180,
+    "eval": {
+      "voices": 4,
+      "posClips": 32,
+      "negClips": 340,
+      "recall": 1.0,
+      "falseFiresPerMin": 0.0
+    }
+  },
+  {
+    "id": "nara",
+    "label": "นารา (Thai)",
+    "lang": "th",
+    "gender": "female",
+    "file": "nara.onnx",
+    "threshold": 0.95,
+    "note": "Held-out (4 unseen voices): recall 100% (peaks 0.970+), silent on everyday speech and all six sibling names. Known confusables: 'นารายณ์' can fire, 'นานา' rarely — next retrain will harden these.",
+    "trainClips": 180,
+    "eval": {
+      "voices": 4,
+      "posClips": 32,
+      "negClips": 332,
+      "recall": 1.0,
+      "falseFiresPerMin": 0.86
+    }
+  }
+]
