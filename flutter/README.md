@@ -52,6 +52,13 @@ mic — the session owns it. Forgetting `stop()` leaves the microphone open.
 
 A second `listenMic` on a kit that is already listening throws `StateError`.
 
+## Example app
+
+![Running on Android — model picker, listening control, sensitivity slider, hit list](https://raw.githubusercontent.com/9zax/wakekit/main/flutter/example/screenshot-android.png)
+
+`flutter/example/` is a manifest-driven picker + start/stop control you can
+run as-is: `cd example && flutter run`.
+
 ## Platforms
 
 | | iOS | Android | Windows | Linux | macOS | Web |

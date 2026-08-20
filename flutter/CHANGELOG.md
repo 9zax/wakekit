@@ -1,3 +1,9 @@
+## 0.1.4
+
+* README: the Android screenshot now actually appears on the pub.dev listing.
+  (0.1.3 put it in example/README.md, which pub.dev's Example tab does not
+  render — that tab only shows example/lib/main.dart source.)
+
 ## 0.1.3
 
 * Example app: redesigned UI (brand colors, score-reactive listening indicator,
