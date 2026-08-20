@@ -1,0 +1,46 @@
+# Publish the Flutter package at flutter/ to pub.dev.
+# Tag pattern on pub.dev (configure after the first manual 0.1.0 publish):
+#   flutter-v{{version}}
+# npm's `v*` tags cannot match this, so a JS release never publishes Dart.
+name: Publish wakekit to pub.dev
+
+on:
+  push:
+    tags:
+      - 'flutter-v[0-9]+.[0-9]+.[0-9]+*'
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: sync-flutter-assets --check
+        run: node scripts/sync-flutter-assets.mjs --check
+      - name: T-11 greps (no TTS vendor names, no network in lib/)
+        run: |
+          set +e
+          vendors=$(grep -RniE 'elevenlabs|openai|cartesia|play\.ht|playht|azure speech|google cloud tts' flutter --include='*.dart' --include='*.md' --include='*.yaml' --include='*.yml')
+          net=$(grep -RnE 'HttpClient|package:http/|\bSocket\b' flutter/lib --include='*.dart')
+          set -e
+          if [ -n "$vendors" ]; then
+            echo "$vendors"
+            echo 'TTS provider names found under flutter/' >&2
+            exit 1
+          fi
+          if [ -n "$net" ]; then
+            echo "$net"
+            echo 'network API found under flutter/lib/' >&2
+            exit 1
+          fi
+
+  publish:
+    needs: check
+    permissions:
+      id-token: write
+    uses: dart-lang/setup-dart/.github/workflows/publish.yml@v1
+    with:
+      working-directory: flutter
+      environment: pub.dev
