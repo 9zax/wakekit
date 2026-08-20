@@ -25,6 +25,7 @@ android {
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         // 23, not flutter.minSdkVersion: flutter_onnxruntime's Android artifact floor (NFR-2).
+        // `flutter run`'s gradle-file auto-migration resets this — re-check after any such run.
         minSdk = 23
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode

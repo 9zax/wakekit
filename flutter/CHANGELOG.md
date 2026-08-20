@@ -1,3 +1,9 @@
+## 0.1.3
+
+* Example app: redesigned UI (brand colors, score-reactive listening indicator,
+  manifest-driven model strip, hit history panel) and a real Android screenshot
+  in the example README.
+
 ## 0.1.2
 
 * README: dedicated Flutter cover image (was reusing the browser-library one).

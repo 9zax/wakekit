@@ -1,5 +1,7 @@
 # wakekit example
 
+![Running on Android — model picker, listening control, sensitivity slider, hit list](screenshot-android.png)
+
 Minimal cousin of the [live demo](https://wakekit.vercel.app): pick a wake word
 from the bundled manifest, start/stop the mic, watch the live score, hit list,
 and observed step interval (should hover near 80 ms at a true 16 kHz feed).
