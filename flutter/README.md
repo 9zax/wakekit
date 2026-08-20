@@ -1,6 +1,6 @@
 # wakekit
 
-![wakekit — train a wake word in any language, run it in the browser](https://raw.githubusercontent.com/9zax/wakekit/main/cover.png)
+![wakekit for Flutter — train a wake word in any language, run it on-device](https://raw.githubusercontent.com/9zax/wakekit/main/cover-flutter.png)
 
 [![pub package](https://img.shields.io/pub/v/wakekit.svg)](https://pub.dev/packages/wakekit)
 [![GitHub](https://img.shields.io/badge/GitHub-9zax%2Fwakekit-181717?logo=github)](https://github.com/9zax/wakekit)

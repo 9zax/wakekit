@@ -1,3 +1,7 @@
+## 0.1.2
+
+* README: dedicated Flutter cover image (was reusing the browser-library one).
+
 ## 0.1.1
 
 * README: cover image on the pub.dev listing.

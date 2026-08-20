@@ -2,7 +2,7 @@ name: wakekit
 description: >-
   Train a wake word for any language with TTS, run it on-device in Flutter. The same frozen
   ONNX models as the wakekit npm package — no cloud, no network call.
-version: 0.1.1
+version: 0.1.2
 homepage: https://github.com/9zax/wakekit
 repository: https://github.com/9zax/wakekit
 issue_tracker: https://github.com/9zax/wakekit/issues
