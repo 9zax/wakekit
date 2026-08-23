@@ -1029,19 +1029,31 @@ try {
     }
     zoo.append(tr);
   }
-  // Test-results table — same manifest, structured `eval` field per trained head.
+  // Test-results table — same manifest, structured `eval` field per trained head. The header says
+  // "wake word", which a 'confirm' head isn't — same badge treatment as the zoo table's label cell
+  // so the row doesn't silently mislabel itself.
   const results = document.querySelector<HTMLTableSectionElement>('#results tbody')!;
   for (const m of models) {
     const tr = document.createElement('tr');
-    const cells = m.eval
-      ? [m.label, String(m.eval.voices), String(m.eval.posClips),
+    let labelResultCell: string | HTMLElement = m.label;
+    if (m.kind === 'confirm') {
+      const wrap = document.createElement('span');
+      wrap.append(m.label);
+      const badge = document.createElement('span');
+      badge.className = 'tag-confirm';
+      badge.innerHTML = '<span class="en">confirmation word</span><span class="th">คำยืนยัน</span>';
+      wrap.append(badge);
+      labelResultCell = wrap;
+    }
+    const cells: (string | HTMLElement)[] = m.eval
+      ? [labelResultCell, String(m.eval.voices), String(m.eval.posClips),
          `${(m.eval.recall * 100).toFixed(1)}%`, String(m.eval.negClips),
          m.eval.falseFiresPerMin.toFixed(2)]
-      : [m.label, '⏳', '—', '—', '—', '—'];
+      : [labelResultCell, '⏳', '—', '—', '—', '—'];
     if (!m.eval) tr.className = 'pending';
     for (const v of cells) {
       const td = document.createElement('td');
-      td.textContent = v;
+      td.append(v as string | Node);
       tr.append(td);
     }
     results.append(tr);
