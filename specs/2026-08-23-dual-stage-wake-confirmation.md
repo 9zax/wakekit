@@ -1,4 +1,4 @@
-# Spec: Dual-stage wake confirmation (name + ครับ/ค่ะ)
+# Spec: Dual-stage wake confirmation (name + ครับ/คะ)
 
 **Date:** 2026-08-23
 **Status:** implemented
@@ -28,7 +28,7 @@ continuously and their output buffers (`mel`, `emb` at `src/worker.ts:53-54`) ar
 Scoring a second phrase is one extra `run()` on the *same* `emb` buffer — no extra audio processing,
 no second pipeline. A second head is ~0.4 MB and one tiny matmul per 80 ms step.
 
-**The ordering constraint is the whole point, and it is not negotiable.** ครับ/ค่ะ are among the
+**The ordering constraint is the whole point, and it is not negotiable.** ครับ/คะ are among the
 most frequent words in spoken Thai — in a meeting they occur constantly. A confirm head running
 continuously would be a false-fire generator, strictly worse than what we have. It must therefore be
 **armed**: zero inference until the primary fires, scoring only inside the window, back to zero when
@@ -97,7 +97,7 @@ fewer wrong ones.
 
 - **FR-3 (zero work when idle — the load-bearing requirement)** — The confirm session is `run()`
   **only** on steps where `clockMs <= armedUntilMs`. Not scored-and-ignored, not scored-and-gated:
-  not executed. This is the entire reason the feature is safe — ครับ/ค่ะ are constant in Thai
+  not executed. This is the entire reason the feature is safe — ครับ/คะ are constant in Thai
   conversation, and a continuously-scored confirm head would fire all day. The call site places the
   `run()` inside the armed branch, structurally: a refactor that hoists it out for tidiness silently
   destroys the feature while every test that only checks *wakes* still passes. FR-3b + T-4 exist to
@@ -236,7 +236,7 @@ fewer wrong ones.
 
 - **FR-15 (honest eval numbers)** — The confirm entry's `eval` block is measured the normal way
   (`scripts/eval.mjs`, unchanged), on the full held-out suite, per CLAUDE.md. Its
-  `falseFiresPerMin` will look *bad* next to the primaries because ครับ/ค่ะ are common words measured
+  `falseFiresPerMin` will look *bad* next to the primaries because ครับ/คะ are common words measured
   over continuous speech. That number is not wrong and must not be massaged: it is the honest
   continuous-operation rate. The `note` states plainly that the head only ever runs armed, inside a
   window a wake word opened, so the table's reader understands what they are looking at — the same
@@ -319,7 +319,7 @@ ones included):
 ```json
 {
   "id": "khrapkha",
-  "label": "ครับ/ค่ะ",
+  "label": "ครับ/คะ",
   "lang": "th",
   "kind": "confirm",
   "file": "khrapkha.onnx",
@@ -399,8 +399,8 @@ Checkbox and hint, inserted in `.controls` (`index.html`) after the existing Rep
 </label>
 
 <p class="hint" id="confirm-hint" hidden>
-  <span class="en">Say the name, then <b>ครับ</b> or <b>ค่ะ</b> within ~2.5 s. Cuts false wakes during long conversations.</span>
-  <span class="th">พูดชื่อ แล้วตามด้วย <b>ครับ</b> หรือ <b>ค่ะ</b> ภายใน ~2.5 วิ ช่วยลดการปลุกผิดตอนคุยยาว ๆ</span>
+  <span class="en">Say the name, then <b>ครับ</b> or <b>คะ</b> within ~2.5 s. Cuts false wakes during long conversations.</span>
+  <span class="th">พูดชื่อ แล้วตามด้วย <b>ครับ</b> หรือ <b>คะ</b> ภายใน ~2.5 วิ ช่วยลดการปลุกผิดตอนคุยยาว ๆ</span>
 </p>
 ```
 
@@ -408,7 +408,7 @@ New `STRINGS` entries (`demo/main.ts:59-66`), matching the map's lowercase conve
 no "มัน" anywhere:
 
 ```ts
-armed:   ['heard the name — say ครับ or ค่ะ', 'ได้ยินชื่อแล้ว — พูด ครับ หรือ ค่ะ ต่อได้เลย'],
+armed:   ['heard the name — say ครับ or คะ', 'ได้ยินชื่อแล้ว — พูด ครับ หรือ คะ ต่อได้เลย'],
 expired: ['no confirmation — still listening', 'ไม่มีคำยืนยัน — ยังฟังอยู่'],
 confirmBadge: ['confirmation word', 'คำยืนยัน'],
 ```
@@ -417,7 +417,7 @@ confirmBadge: ['confirmation word', 'คำยืนยัน'],
 
 | Case | Behaviour |
 |---|---|
-| ครับ/ค่ะ said in a meeting, never preceded by the wake word | Confirm head is not armed, so it is **never executed**. Cannot fire by construction (FR-3, verified via FR-3b's counter). |
+| ครับ/คะ said in a meeting, never preceded by the wake word | Confirm head is not armed, so it is **never executed**. Cannot fire by construction (FR-3, verified via FR-3b's counter). |
 | "ละดาครับ" said fast, no pause | Fine — the particle enters the window while armed; the window is a deadline, not a required gap. |
 | "ครับ ละดา" (particle spoken before the name) | **Not architecturally impossible to fire.** At the first armed step, the shared `emb` buffer already holds ~1.2 s of *preceding* audio, so a particle spoken just before the name can still be inside that buffer when scoring starts. Order is enforced by what the head was trained on (FR-12 trains name-then-particle, not the reverse), not by the buffer. If eval finds this fires, it is documented as a known confusable and excluded from the eval-neg suite, per FR-15 — not a shipping blocker. |
 | Confirm word is a substring of an existing wake word (e.g. ทับ inside ทับทิม) | Independent training/eval suites (FR-13) — a `thapthim` hit does not arm khrapkha (different heads, different pipeline stage), and khrapkha's own hard-negative list should include ทับ-shaped confusables per FR-13. |
@@ -448,7 +448,7 @@ protocol directly and asserting on the `confirmRuns` counter (FR-3b).
 | T-1 | `npx tsc --noEmit` clean; `lib/index.d.ts` regenerated | NFR-7 |
 | T-2 | `npm run selfcheck` green — all seven existing heads unchanged; pending khrapkha entry's placeholder threshold passes the pre-filter assertion without loading anything | NFR-8, Data model |
 | T-3 | With `confirm` unset, capture the verbose score trace for a wake clip via the selfcheck harness before and after this change → identical, byte-for-byte | FR-1, NFR-1 |
-| T-4 | New selfcheck gating section: feed 60 s of khrapkha's own `neg_*` clips (dense with ครับ/ค่ะ, no wake word) with `confirm` configured → zero `armed`, zero `hit`, and the running `confirmRuns` counter stays exactly 0 throughout | FR-3, FR-3b, NFR-2 |
+| T-4 | New selfcheck gating section: feed 60 s of khrapkha's own `neg_*` clips (dense with ครับ/คะ, no wake word) with `confirm` configured → zero `armed`, zero `hit`, and the running `confirmRuns` counter stays exactly 0 throughout | FR-3, FR-3b, NFR-2 |
 | T-5 | Wake clip then particle clip within 2.5 s → one `armed`, then one `hit` carrying the primary's score; `confirmRuns` increments only during the armed window | FR-2, FR-4 |
 | T-6 | Wake clip then 4 s of silence/neg audio → one `armed`, one `armExpired`, no `hit` | FR-5 |
 | T-7 | Wake clip, then particle at 3.5 s (past the window) → no `hit`; re-run with `confirmWindowMs: 4000` → `hit` | FR-5, FR-7 |
@@ -483,7 +483,7 @@ All resolved.
 - What does the opt-in look like? → **A checkbox in the demo controls**, separate from the model
   dropdown, persisted in `localStorage` like every other demo setting, hidden (not disabled) when no
   confirm head exists for the current language.
-- Should the confirm head run continuously? → **No — this is the core constraint.** ครับ/ค่ะ are
+- Should the confirm head run continuously? → **No — this is the core constraint.** ครับ/คะ are
   everywhere in Thai conversation. It runs only inside the window a wake word opened (FR-3), which
   is also why its standalone false-fire number is allowed to look bad (FR-15), and it is why the
   training/eval pipeline for this head is kept fully separate from the sibling cross-trap mechanism

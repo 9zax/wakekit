@@ -237,7 +237,7 @@ if (!confirmHead || !primaryForConfirm) {
   };
 
   // FR-3: confirmRuns stays 0 across a clip where the wake word is never spoken — the confirm
-  // head's own neg_ clips (dense with ครับ/ค่ะ, no wake word) are exactly that.
+  // head's own neg_ clips (dense with ครับ/คะ, no wake word) are exactly that.
   const confirmClips = clipsFor(confirmHead);
   const confirmNeg = confirmClips.clips.filter((f) => f.startsWith('neg_'));
   if (!confirmNeg.length) {

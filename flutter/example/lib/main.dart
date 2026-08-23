@@ -148,7 +148,7 @@ class _WakekitHomePageState extends State<WakekitHomePage> {
           confirmModel: confirmModel,
           onArm: confirmModel == null
               ? null
-              : (score) => setState(() => _confirmStatus = 'heard the name — say ครับ or ค่ะ'),
+              : (score) => setState(() => _confirmStatus = 'heard the name — say ครับ or คะ'),
           onArmExpire: confirmModel == null
               ? null
               : () => setState(() => _confirmStatus = 'no confirmation — still listening'),
@@ -304,7 +304,7 @@ class _WakekitHomePageState extends State<WakekitHomePage> {
                         style: TextStyle(color: _white, fontSize: 14),
                       ),
                       subtitle: Text(
-                        'Say the name, then ครับ or ค่ะ',
+                        'Say the name, then ครับ or คะ',
                         style: TextStyle(color: _dim, fontSize: 12),
                       ),
                       // confirmModel is a WakeKitOptions load-time field, not something

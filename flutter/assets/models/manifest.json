@@ -119,12 +119,12 @@
   },
   {
     "id": "khrapkha",
-    "label": "ครับ/ค่ะ",
+    "label": "ครับ/คะ",
     "lang": "th",
     "kind": "confirm",
     "file": "khrapkha.onnx",
     "threshold": 0.93,
-    "note": "Confirmation head for dual-stage wake (spec: 2026-08-23-dual-stage-wake-confirmation) — armed only, runs inside the ~2.5s window a wake word opens, never continuously. Held-out (4 unseen voices): 93.8% recall overall, but 100% on the actual runtime input (particle spoken as the tail of a name — the only way this head is ever armed); the shortfall is bare isolated ครับ/ค่ะ with no name before it, which never occurs in production. Known confusables: 'จับ', 'นับ', 'ครับผม', 'คับ', 'รับ', 'กลับ', 'ค่า' can fire — next retrain will harden these. 15.98 false-fires/min is the continuous-operation rate over common speech — irrelevant to real misfire risk since the head never runs unarmed; see the spec.",
+    "note": "Confirmation head for dual-stage wake (spec: 2026-08-23-dual-stage-wake-confirmation) — armed only, runs inside the ~2.5s window a wake word opens, never continuously. Held-out (4 unseen voices): 93.8% recall overall, but 100% on the actual runtime input (particle spoken as the tail of a name — the only way this head is ever armed); the shortfall is bare isolated ครับ/คะ with no name before it, which never occurs in production. Known confusables: 'จับ', 'นับ', 'ครับผม', 'คับ', 'รับ', 'กลับ', 'ค่า' can fire — next retrain will harden these. 15.98 false-fires/min is the continuous-operation rate over common speech — irrelevant to real misfire risk since the head never runs unarmed; see the spec.",
     "trainClips": 1100,
     "eval": {
       "voices": 4,

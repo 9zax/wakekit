@@ -113,7 +113,7 @@ async function pump() {
       // Dual-stage confirm gate (FR-2 through FR-6). The confirm head's run() sits INSIDE this
       // branch, structurally — not scored-and-ignored, not scored-and-gated: not executed when
       // unarmed. Hoisting it out for tidiness would silently turn a gate into a false-fire
-      // generator, since ครับ/ค่ะ-style confirm words are common in ordinary speech (FR-3).
+      // generator, since ครับ/คะ-style confirm words are common in ordinary speech (FR-3).
       if (confirmS) {
         if (clockMs <= armedUntilMs) {
           confirmRuns++;

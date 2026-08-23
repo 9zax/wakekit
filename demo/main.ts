@@ -102,7 +102,7 @@ const STRINGS = {
     'ยังใช้ถอดเสียงไทยไม่ได้ — เปิด Dictation แล้วเพิ่มภาษาไทยใน System Settings › Keyboard › Dictation แล้วลองใหม่',
   ],
   // Dual-stage wake (spec: 2026-08-23-dual-stage-wake-confirmation).
-  armed: ['heard the name — say ครับ or ค่ะ', 'ได้ยินชื่อแล้ว — พูด ครับ หรือ ค่ะ ต่อได้เลย'],
+  armed: ['heard the name — say ครับ or คะ', 'ได้ยินชื่อแล้ว — พูด ครับ หรือ คะ ต่อได้เลย'],
   expired: ['no confirmation — still listening', 'ไม่มีคำยืนยัน — ยังฟังอยู่'],
   confirmBadge: ['confirmation word', 'คำยืนยัน'],
 } as const;
@@ -235,7 +235,7 @@ function showWakePill() {
   if (IS_TAURI) void import('@tauri-apps/api/event').then((e) => e.emit('overlay-show'));
 }
 
-// ---- Dual-stage wake — the wake word fired, waiting for the confirmation particle (ครับ/ค่ะ).
+// ---- Dual-stage wake — the wake word fired, waiting for the confirmation particle (ครับ/คะ).
 // spec: 2026-08-23-dual-stage-wake-confirmation. All state text goes through #stt-state
 // (setSttState) — the wake pill itself is aria-hidden/decorative, never a live region.
 let activeConfirmWindowMs = 2500;
