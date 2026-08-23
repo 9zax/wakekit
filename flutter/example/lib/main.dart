@@ -78,6 +78,10 @@ class _WakekitHomePageState extends State<WakekitHomePage> {
   final List<_Hit> _hits = [];
   String? _error;
 
+  // Dual-stage wake opt-in (spec: 2026-08-23-dual-stage-wake-confirmation).
+  bool _requireConfirm = false;
+  String? _confirmStatus; // "armed" / "expired" feedback, null the rest of the time
+
   @override
   void initState() {
     super.initState();
@@ -85,11 +89,21 @@ class _WakekitHomePageState extends State<WakekitHomePage> {
       setState(() {
         _models = models;
         _selected = models.firstWhere(
-          (m) => !m.pending,
+          (m) => !m.pending && m.kind != 'confirm',
           orElse: () => models.first,
         );
       });
     });
+  }
+
+  /// The first non-pending 'confirm'-kind entry matching the selected model's language, or null.
+  WakeModel? get _confirmModel {
+    final sel = _selected;
+    if (sel == null) return null;
+    for (final m in _models ?? const <WakeModel>[]) {
+      if (m.kind == 'confirm' && m.lang == sel.lang && !m.pending) return m;
+    }
+    return null;
   }
 
   bool get _listening => _kit != null;
@@ -99,14 +113,23 @@ class _WakekitHomePageState extends State<WakekitHomePage> {
   Future<void> _start() async {
     final model = _selected;
     if (model == null || model.pending) return;
-    setState(() => _error = null);
+    setState(() {
+      _error = null;
+      _confirmStatus = null;
+    });
+    // Only actually paired when the toggle is on AND a confirm head exists for this model's
+    // language — an on-but-unavailable toggle silently runs single-stage (mirrors the demo's
+    // syncConfirmRow, FR-8).
+    final confirmModel = _requireConfirm ? _confirmModel : null;
     try {
       final kit = await WakeKit.load(
         WakeKitOptions(
           model: model,
           verbose: true,
-          onHit: (score) =>
-              setState(() => _hits.insert(0, _Hit(DateTime.now(), score))),
+          onHit: (score) => setState(() {
+            _hits.insert(0, _Hit(DateTime.now(), score));
+            _confirmStatus = null;
+          }),
           onScore: (score, atMs) {
             final now = DateTime.now();
             setState(() {
@@ -122,6 +145,13 @@ class _WakekitHomePageState extends State<WakekitHomePage> {
             _kit = null;
             _mic = null;
           }),
+          confirmModel: confirmModel,
+          onArm: confirmModel == null
+              ? null
+              : (score) => setState(() => _confirmStatus = 'heard the name — say ครับ or ค่ะ'),
+          onArmExpire: confirmModel == null
+              ? null
+              : () => setState(() => _confirmStatus = 'no confirmation — still listening'),
         ),
       );
       kit.configure(threshold: _threshold);
@@ -143,6 +173,7 @@ class _WakekitHomePageState extends State<WakekitHomePage> {
       _kit = null;
       _lastScore = 0;
       _stepIntervalMs = null;
+      _confirmStatus = null;
     });
   }
 
@@ -186,10 +217,14 @@ class _WakekitHomePageState extends State<WakekitHomePage> {
                       onDismiss: () => setState(() => _error = null),
                     ),
                   _ModelStrip(
-                    models: models,
+                    // A 'confirm' head is never a selectable wake word on its own (FR-11).
+                    models: models.where((m) => m.kind != 'confirm').toList(),
                     selected: _selected,
                     enabled: !_listening,
-                    onSelect: (m) => setState(() => _selected = m),
+                    onSelect: (m) => setState(() {
+                      _selected = m;
+                      _confirmStatus = null;
+                    }),
                   ),
                   Expanded(
                     child: Center(
@@ -225,6 +260,14 @@ class _WakekitHomePageState extends State<WakekitHomePage> {
                               fontSize: 15,
                             ),
                           ),
+                          if (_confirmStatus != null)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 6),
+                              child: Text(
+                                _confirmStatus!,
+                                style: TextStyle(color: _green, fontSize: 13),
+                              ),
+                            ),
                           if (_stepIntervalMs != null)
                             Padding(
                               padding: const EdgeInsets.only(top: 4),
@@ -250,6 +293,30 @@ class _WakekitHomePageState extends State<WakekitHomePage> {
                       ); // live retune (FR-4/FR-5), no reload
                     },
                   ),
+                  // Dual-stage wake opt-in — hidden when no confirm head pairs with the selected
+                  // model's language (spec: 2026-08-23-dual-stage-wake-confirmation).
+                  if (_confirmModel != null)
+                    SwitchListTile(
+                      value: _requireConfirm,
+                      activeThumbColor: _green,
+                      title: Text(
+                        'Require confirmation',
+                        style: TextStyle(color: _white, fontSize: 14),
+                      ),
+                      subtitle: Text(
+                        'Say the name, then ครับ or ค่ะ',
+                        style: TextStyle(color: _dim, fontSize: 12),
+                      ),
+                      // confirmModel is a WakeKitOptions load-time field, not something
+                      // Pipeline.configure() carries — toggling always restarts, like a model switch.
+                      onChanged: (v) async {
+                        setState(() => _requireConfirm = v);
+                        if (_listening) {
+                          await _stop();
+                          await _start();
+                        }
+                      },
+                    ),
                   _HitPanel(hits: _hits),
                 ],
               ),

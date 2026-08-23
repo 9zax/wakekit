@@ -45,6 +45,7 @@ class WakeModel {
     this.pending = false,
     this.trainClips,
     this.eval,
+    this.kind = 'wake',
   });
 
   factory WakeModel.fromJson(Map<String, dynamic> json) => WakeModel(
@@ -60,6 +61,7 @@ class WakeModel {
     eval: json['eval'] == null
         ? null
         : WakeModelEval.fromJson(json['eval'] as Map<String, dynamic>),
+    kind: json['kind'] as String? ?? 'wake',
   );
 
   /// Stable id — what an app stores as "the chosen wake word".
@@ -92,4 +94,9 @@ class WakeModel {
 
   /// Held-out measurement behind [threshold] — see `scripts/eval.mjs`.
   final WakeModelEval? eval;
+
+  /// 'confirm' heads are the second stage of a dual-stage wake (spec: 2026-08-23-dual-stage-wake-
+  /// confirmation) — never a selectable wake word on their own. Defaults to 'wake', so every
+  /// existing manifest entry is unaffected.
+  final String kind;
 }

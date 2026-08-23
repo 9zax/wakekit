@@ -29,7 +29,7 @@ const HTML = `<!doctype html>
     const sel = document.getElementById('model');
     const btn = document.getElementById('start');
     const status = document.getElementById('status');
-    const models = await loadManifest('./models/');   // every model in this zip
+    const models = (await loadManifest('./models/')).filter((m) => m.kind !== 'confirm');
     for (const m of models) sel.add(new Option(\`\${m.label} — \${m.lang}\`, m.id));
     let kit = null, stop = null;
 

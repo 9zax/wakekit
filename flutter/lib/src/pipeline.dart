@@ -22,6 +22,11 @@ class Pipeline {
     this.onHit,
     this.onScore,
     this.onError,
+    this.runConfirm,
+    this.confirmThreshold = 0.5,
+    this.confirmWindowMs = 2500,
+    this.onArm,
+    this.onArmExpire,
   });
 
   // openWakeWord's fixed feature geometry — properties of the two frozen models, not tunables.
@@ -57,6 +62,22 @@ class Pipeline {
   void Function(double score, double atMs)? onScore;
   void Function(Object error)? onError;
 
+  // ---- Dual-stage wake (spec: 2026-08-23-dual-stage-wake-confirmation) ----
+  // Optional second head. `null` = feature off; the code below collapses to today's single-head
+  // behaviour. Mirrors src/worker.ts's confirmS/armedUntilMs/armedScore/confirmRuns exactly.
+  final ModelRunner? runConfirm;
+  final double confirmThreshold;
+  final int confirmWindowMs;
+  void Function(double score)? onArm;
+  void Function()? onArmExpire;
+
+  double _armedUntilMs = double.negativeInfinity;
+  double _armedScore = 0;
+
+  /// Confirm-head run() calls, ever. Instrumentation only, for proving the confirm head runs zero
+  /// times while unarmed (the Dart mirror of FR-3b's `confirmRuns`).
+  int confirmRuns = 0;
+
   // ponytail: plain growable lists, mirroring the TS worker's own number[]/Float32Array.slice()
   // buffers. A ring buffer would cut the removeRange() copies, but at 12.5 steps/s these are a
   // few thousand doubles each — add one only if profiling ever says otherwise.
@@ -84,6 +105,8 @@ class Pipeline {
     _emb.clear();
     _clockMs = 0;
     _lastHitMs = double.negativeInfinity;
+    _armedUntilMs = double.negativeInfinity;
+    confirmRuns = 0;
   }
 
   /// Feed 16 kHz mono float32 samples. Caps the *undrained* backlog at [backlogCap], then drains.
@@ -146,16 +169,52 @@ class Pipeline {
           embDim,
         ]);
         final score = headOut[0];
-        if (verbose) onScore?.call(score, _clockMs);
+
+        // Dual-stage confirm gate — mirrors src/worker.ts's pump() exactly. runConfirm sits
+        // INSIDE the armed branch, structurally: not scored-and-ignored, not scored-and-gated,
+        // not executed when unarmed. A refactor that hoists it out for tidiness would silently
+        // turn a gate into a false-fire generator.
+        if (runConfirm != null) {
+          if (_clockMs <= _armedUntilMs) {
+            confirmRuns++;
+            final confirmOut = await runConfirm!(Float32List.fromList(_emb), [
+              1,
+              embWin,
+              embDim,
+            ]);
+            if (verbose) onScore?.call(score, _clockMs);
+            if (confirmOut[0] >= confirmThreshold) {
+              _armedUntilMs = double.negativeInfinity;
+              _lastHitMs = _clockMs;
+              onHit?.call(_armedScore); // the PRIMARY's score, not the confirm's
+            }
+          } else {
+            if (verbose) onScore?.call(score, _clockMs);
+            if (_armedUntilMs > double.negativeInfinity) {
+              _armedUntilMs = double.negativeInfinity;
+              onArmExpire?.call();
+            }
+          }
+        } else if (verbose) {
+          onScore?.call(score, _clockMs);
+        }
+
         if (score >= threshold && _clockMs - _lastHitMs > refractoryMs) {
           _lastHitMs = _clockMs;
-          onHit?.call(score);
+          if (runConfirm == null) {
+            onHit?.call(score);
+          } else {
+            _armedScore = score;
+            _armedUntilMs = _clockMs + confirmWindowMs;
+            onArm?.call(score);
+          }
         }
       }
     } catch (e) {
       // A run that throws mid-stream would otherwise wedge `_pumping` and silently stop
       // detection — tear down instead, matching src/worker.ts's melS=embS=headS=null.
       disposed = true;
+      _armedUntilMs = double.negativeInfinity;
       onError?.call(e);
     } finally {
       _pumping = false;

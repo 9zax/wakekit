@@ -23,6 +23,10 @@ class WakeKitOptions {
     this.onHit,
     this.onScore,
     this.onError,
+    this.confirmModel,
+    this.confirmWindow = const Duration(milliseconds: 2500),
+    this.onArm,
+    this.onArmExpire,
   });
 
   /// Which wake word to load — a manifest entry from [loadManifest]. Loading a `pending: true`
@@ -41,6 +45,20 @@ class WakeKitOptions {
   /// The pipeline died mid-stream (a mid-stream inference error, or an external error reported
   /// through a [MicSession]). It does not auto-recover — recreate the kit.
   final void Function(Object error)? onError;
+
+  /// Require a second phrase after the wake word before [onHit] fires. `null` (the default) is
+  /// today's single-stage behaviour. Load-time only — not retunable via [WakeKit.configure].
+  /// spec: 2026-08-23-dual-stage-wake-confirmation.
+  final WakeModel? confirmModel;
+
+  /// How long the confirm head listens after the wake word. Default 2.5 s.
+  final Duration confirmWindow;
+
+  /// Dual-stage only: the wake word was heard and the confirm head is now listening. Not a wake.
+  final void Function(double score)? onArm;
+
+  /// Dual-stage only: the confirm window closed with no confirmation. No hit followed.
+  final void Function()? onArmExpire;
 }
 
 ModelRunner _sessionRunner(OrtSession session) {
@@ -65,20 +83,27 @@ class WakeKit {
     this._melSession,
     this._embSession,
     this._headSession,
+    this._confirmSession,
   );
 
   final Pipeline _pipeline;
   final OrtSession _melSession;
   final OrtSession _embSession;
   final OrtSession _headSession;
+  final OrtSession? _confirmSession;
 
   static final OnnxRuntime _runtime = OnnxRuntime();
 
-  /// Resolves once all three models are live; rejects if any fails to load.
+  /// Resolves once all three (or four, dual-stage) models are live; rejects if any fails to load.
   static Future<WakeKit> load(WakeKitOptions opts) async {
     if (opts.model.pending) {
       throw ArgumentError(
         'WakeKit.load: "${opts.model.id}" is pending — announced but not trained yet, nothing to load',
+      );
+    }
+    if (opts.confirmModel?.pending ?? false) {
+      throw ArgumentError(
+        'WakeKit.load: confirm model "${opts.confirmModel!.id}" is pending — nothing to load',
       );
     }
 
@@ -95,6 +120,29 @@ class WakeKit {
     final headBytes = await readModelAssetBytes(opts.model.file);
     final embWin = readHeadInputWindow(headBytes);
 
+    // Dual-stage confirm head (spec: 2026-08-23-dual-stage-wake-confirmation). Both heads MUST
+    // share one embedding window — `_emb` is a single buffer sized to the primary's `embWin`
+    // (Pipeline.embWin) — so a mismatched confirm head is rejected here, at load time, rather
+    // than corrupting a live stream (mirrors src/worker.ts's FR-7b check).
+    OrtSession? confirmSession;
+    ModelRunner? runConfirm;
+    if (opts.confirmModel != null) {
+      final confirmPath = await extractModelAsset(opts.confirmModel!.file);
+      confirmSession = await _runtime.createSession(confirmPath);
+      final confirmBytes = await readModelAssetBytes(opts.confirmModel!.file);
+      final confirmWin = readHeadInputWindow(confirmBytes);
+      if (confirmWin != embWin) {
+        await melSession.close();
+        await embSession.close();
+        await headSession.close();
+        await confirmSession.close();
+        throw ArgumentError(
+          'WakeKit.load: confirm head embedding window ($confirmWin) does not match the primary\'s ($embWin)',
+        );
+      }
+      runConfirm = _sessionRunner(confirmSession);
+    }
+
     late final WakeKit kit;
     final pipeline = Pipeline(
       runMel: _sessionRunner(melSession),
@@ -109,8 +157,13 @@ class WakeKit {
         unawaited(kit._closeSessions());
         opts.onError?.call(e);
       },
+      runConfirm: runConfirm,
+      confirmThreshold: opts.confirmModel?.threshold ?? 0.5,
+      confirmWindowMs: opts.confirmWindow.inMilliseconds,
+      onArm: opts.onArm,
+      onArmExpire: opts.onArmExpire,
     );
-    kit = WakeKit._(pipeline, melSession, embSession, headSession);
+    kit = WakeKit._(pipeline, melSession, embSession, headSession, confirmSession);
     return kit;
   }
 
@@ -157,5 +210,6 @@ class WakeKit {
     await _melSession.close();
     await _embSession.close();
     await _headSession.close();
+    await _confirmSession?.close();
   }
 }

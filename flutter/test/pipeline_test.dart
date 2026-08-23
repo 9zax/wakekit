@@ -163,4 +163,99 @@ void main() {
       expect(errorCount, 1);
     },
   );
+
+  // ---- Dual-stage wake gating (spec: 2026-08-23-dual-stage-wake-confirmation) ----
+  // Mirrors src/selfcheck.ts's dual-stage assertions (T-4/T-5/T-6) against the Dart pipeline.
+
+  test('confirm head never runs while the primary never crosses (FR-3)', () async {
+    var confirmRunCount = 0;
+    final pipeline = Pipeline(
+      runMel: _fakeMel,
+      runEmb: _fakeEmb,
+      runHead: (input, shape) async => [0.1], // never crosses threshold
+      runConfirm: (input, shape) async {
+        confirmRunCount++;
+        return [0.9];
+      },
+      embWin: 1,
+      threshold: 0.5,
+      confirmThreshold: 0.5,
+    );
+
+    await _pushSteps(pipeline, 20);
+
+    expect(confirmRunCount, 0);
+    expect(pipeline.confirmRuns, 0);
+  });
+
+  test(
+    'primary crossing arms the confirm head; a confirm crossing fires onHit with the PRIMARY score (FR-2/FR-4)',
+    () async {
+      final armed = <double>[];
+      final hits = <double>[];
+      var headCall = 0;
+      var confirmCall = 0;
+      final pipeline = Pipeline(
+        runMel: _fakeMel,
+        runEmb: _fakeEmb,
+        // First step crosses (arms); after that, stay low so no accidental re-arm.
+        runHead: (input, shape) async => [headCall++ == 0 ? 0.9 : 0.1],
+        // First confirm run (on the step right after arming) crosses immediately.
+        runConfirm: (input, shape) async {
+          confirmCall++;
+          return [0.9];
+        },
+        embWin: 1,
+        threshold: 0.5,
+        confirmThreshold: 0.5,
+        onArm: armed.add,
+        onHit: hits.add,
+      );
+
+      await _pushSteps(pipeline, 5);
+
+      expect(armed, [closeTo(0.9, 1e-9)]);
+      expect(
+        hits,
+        [closeTo(0.9, 1e-9)],
+      ); // the PRIMARY's armed score, not the confirm head's
+      expect(confirmCall, 1); // disarmed immediately after the hit
+    },
+  );
+
+  test(
+    'confirm window expires with no confirmation -> onArmExpire, never onHit (FR-5)',
+    () async {
+      final armed = <double>[];
+      final expired = <void>[];
+      final hits = <double>[];
+      var headCall = 0;
+      var confirmRunCount = 0;
+      final pipeline = Pipeline(
+        runMel: _fakeMel,
+        runEmb: _fakeEmb,
+        runHead: (input, shape) async => [headCall++ == 0 ? 0.9 : 0.1],
+        // Confirm phrase is never heard.
+        runConfirm: (input, shape) async {
+          confirmRunCount++;
+          return [0.1];
+        },
+        embWin: 1,
+        threshold: 0.5,
+        confirmThreshold: 0.5,
+        confirmWindowMs: 2500,
+        onArm: armed.add,
+        onArmExpire: () => expired.add(null),
+        onHit: hits.add,
+      );
+
+      // 2500 ms window / 80 ms per step ≈ 32 steps; push well past it.
+      await _pushSteps(pipeline, 40);
+
+      expect(armed.length, 1);
+      expect(expired.length, 1);
+      expect(hits, isEmpty);
+      expect(confirmRunCount, greaterThan(0)); // ran inside the window, per FR-3's other half
+    },
+  );
 }

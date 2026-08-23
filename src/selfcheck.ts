@@ -17,7 +17,10 @@ import { strict as assert } from 'node:assert';
 import { readFileSync, readdirSync } from 'node:fs';
 import { basename, join } from 'node:path';
 
-type Head = { id: string; file: string; threshold: number; label: string; pending?: boolean };
+type Head = {
+  id: string; file: string; threshold: number; label: string; lang?: string; pending?: boolean;
+  kind?: 'wake' | 'confirm';
+};
 const ALL: Head[] = JSON.parse(readFileSync('models/manifest.json', 'utf8'));
 assert.ok(ALL.length, 'manifest.json is empty');
 assert.ok(ALL.every((m) => m.threshold > 0 && m.threshold <= 1), 'every bar is a probability');
@@ -29,7 +32,7 @@ assert.ok(MODELS.length, 'manifest.json has no trained heads');
 // The worker is written for a Worker global scope and fetches its models by URL. Both are stubbed
 // rather than parameterised, so the module under test is byte-identical to the one vite ships.
 let onmessage: ((e: { data: unknown }) => void) | null = null;
-const posted: { type: string; score?: number; window?: number; message?: string }[] = [];
+const posted: { type: string; score?: number; window?: number; message?: string; confirmRuns?: number }[] = [];
 
 Object.defineProperty(globalThis, 'self', {
   configurable: true,
@@ -169,4 +172,102 @@ if (!covered) {
 } else {
   assert.ok(checked >= 4, `only ${checked} clips carried a pos_/neg_ expectation`);
   console.log(`selfcheck: all assertions passed (${covered} head(s) with clip suites)`);
+}
+
+// ---- Tier 3: dual-stage gating (FR-3, FR-3b, NFR-8) ----
+// spec: 2026-08-23-dual-stage-wake-confirmation. The per-head clip tiers above prove each head is
+// individually correct; they say nothing about the ARM/DISARM control flow, which lives in
+// worker.ts's control flow, not in any one head. Guarded on a trained ('confirm'-kind, non-pending)
+// head existing paired with a trained wake head of the same language — today that means khrapkha
+// ships pending, so this whole tier prints SKIPPED until it's trained, matching the "ships dark"
+// behaviour the rest of the feature already has.
+const confirmHead = MODELS.find((m) => m.kind === 'confirm');
+const primaryForConfirm = confirmHead
+  && MODELS.find((m) => m.kind !== 'confirm' && m.lang === confirmHead.lang);
+
+if (!confirmHead || !primaryForConfirm) {
+  console.log('\nno trained confirm head — dual-stage gating assertions SKIPPED.');
+} else {
+  console.log(`\ndual-stage gating: ${primaryForConfirm.file} (primary) + ${confirmHead.file} (confirm)`);
+  posted.length = 0;
+  send({
+    type: 'load',
+    melUrl: 'model:melspectrogram.onnx',
+    embUrl: 'model:embedding_model.onnx',
+    headUrl: `model:${primaryForConfirm.file}`,
+    threshold: primaryForConfirm.threshold,
+    confirmUrl: `model:${confirmHead.file}`,
+    confirmThreshold: confirmHead.threshold,
+    confirmWindowMs: 2500,
+    verbose: true,
+  });
+  for (let i = 0; i < 200 && !posted.some((m) => m.type === 'loaded'); i++) await settle(25);
+  assert.ok(posted.some((m) => m.type === 'loaded'), 'dual-stage load failed');
+  loadedHead = null; // force feed() to reload plain single-head state if anything runs after this
+  posted.length = 0;
+
+  // Feed one 16kHz clip through the currently-loaded dual-stage worker and return everything it
+  // posted. Doesn't reuse feed() — that function reloads a single head by id/threshold, which
+  // would tear down the confirm session we just set up. Trailing silence must comfortably exceed
+  // confirmWindowMs (2500ms = 40,000 samples), or an arm near the end of the clip never gets a
+  // chance to actually expire within the fed audio — 1.5s (feed()'s own pad) is not enough here.
+  // Padding is dithered, not exact digital zero: real microphone silence always carries a tiny
+  // noise floor, and the confirm head — trained on that, per featurize.mjs's `background()` —
+  // scores unpredictably on true zeros, an input it never saw. Exact-zero padding happened to be
+  // harmless for every primary head's own silence check (Tier 1) but is not a safe assumption for
+  // an armed confirm window this long relative to the padding.
+  async function feedDual(clip: Float32Array) {
+    posted.length = 0;
+    const dither = (n: number) => Float32Array.from({ length: n }, () => (Math.random() - 0.5) * 0.002);
+    const lead = dither(24_000); // 1.5s — enough to fill the embedding window
+    const trail = dither(64_000); // 4s — comfortably past the 2.5s confirm window
+    const audio = new Float32Array(lead.length + clip.length + trail.length);
+    audio.set(lead); audio.set(clip, lead.length); audio.set(trail, lead.length + clip.length);
+    for (let i = 0; i < audio.length; i += 1280) {
+      send({ type: 'push', f32: audio.slice(i, i + 1280) });
+      await settle(0);
+    }
+    await settle(300);
+    assert.ok(!posted.some((m) => m.type === 'error'), `worker errored: ${posted.find((m) => m.type === 'error')?.message}`);
+    return posted;
+  }
+  const maxConfirmRuns = (msgs: typeof posted) => {
+    const runs = msgs.filter((m) => m.type === 'score').map((m) => m.confirmRuns ?? 0);
+    return runs.length ? Math.max(...runs) : 0;
+  };
+
+  // FR-3: confirmRuns stays 0 across a clip where the wake word is never spoken — the confirm
+  // head's own neg_ clips (dense with ครับ/ค่ะ, no wake word) are exactly that.
+  const confirmClips = clipsFor(confirmHead);
+  const confirmNeg = confirmClips.clips.filter((f) => f.startsWith('neg_'));
+  if (!confirmNeg.length) {
+    console.log(`  no neg_ clips under ${confirmClips.dir} — FR-3 zero-inference check SKIPPED.`);
+  } else {
+    for (const f of confirmNeg) {
+      const msgs = await feedDual(wav16(join(confirmClips.dir, f)));
+      assert.ok(!msgs.some((m) => m.type === 'armed'), `${f}: armed with no wake word spoken`);
+      assert.ok(!msgs.some((m) => m.type === 'hit'), `${f}: hit with no wake word spoken`);
+      assert.equal(maxConfirmRuns(msgs), 0, `${f}: confirm head ran while unarmed — FR-3 violated`);
+    }
+    console.log(`  FR-3: confirm head ran 0 times across ${confirmNeg.length} clip(s) with no wake word`);
+  }
+
+  // FR-2/FR-3/FR-5: the primary's own pos_ clips (already required to exist by Tier 2 above) say
+  // the wake word but not the confirm phrase — arms, runs the confirm head at least once inside
+  // the window, then expires unconfirmed. Exercises "non-zero only inside an armed window" without
+  // needing khrapkha-specific clips.
+  const primaryClips = clipsFor(primaryForConfirm);
+  const primaryPos = primaryClips.clips.filter((f) => f.startsWith('pos_'));
+  if (!primaryPos.length) {
+    console.log(`  no pos_ clips under ${primaryClips.dir} — FR-2/FR-5 arm/expire check SKIPPED.`);
+  } else {
+    const f = primaryPos[0];
+    const msgs = await feedDual(wav16(join(primaryClips.dir, f)));
+    assert.ok(msgs.some((m) => m.type === 'armed'), `${f}: primary spoken but never armed`);
+    assert.ok(msgs.some((m) => m.type === 'armExpired'), `${f}: window never expired (no confirm word in this clip)`);
+    assert.ok(!msgs.some((m) => m.type === 'hit'), `${f}: confirmed a hit with no confirm word spoken`);
+    assert.ok(maxConfirmRuns(msgs) > 0, `${f}: confirm head never ran despite arming`);
+    console.log(`  FR-2/FR-5: ${f} armed the confirm head, ran it, then expired unconfirmed`);
+  }
+  console.log('selfcheck: dual-stage gating assertions passed');
 }

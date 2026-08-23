@@ -12,11 +12,17 @@
 // replacing the third file. Nothing here names a model — URLs come from the main thread — so a
 // different phrase is a file copy plus a manifest entry, no rebuild of this worker.
 //
-// Protocol: {load, wasmBase, melUrl, embUrl, headUrl, threshold, verbose}
+// Protocol: {load, wasmBase, melUrl, embUrl, headUrl, threshold, verbose,
+//            confirmUrl?, confirmThreshold?, confirmWindowMs?}
 //             → {loaded, window} | {error}
-//           {config, threshold?, verbose?}          live retune, no reload
+//           {config, threshold?, verbose?}          live retune, no reload (confirm is load-time only)
 //           {push, f32}  (16 kHz — resample on the main thread, src/index.ts does)
-//             → {hit, score} on a threshold crossing | {score, atMs} every step when verbose.
+//             → {hit, score} on a threshold crossing (or a confirmed dual-stage wake, see below)
+//             → {score, atMs, confirmRuns?} every step when verbose
+//             → {armed, score} | {armExpired} — dual-stage only (spec: 2026-08-23-dual-stage-wake-
+//               confirmation). With `confirmUrl` set, a primary crossing arms the confirm head for
+//               `confirmWindowMs` instead of posting `hit` directly; `hit` follows only if the
+//               confirm head also crosses `confirmThreshold` inside that window.
 //
 // `onnxruntime-web/wasm`, NOT the package default: the default is the jsep (WebGPU/WebNN) build,
 // which fetches `ort-wasm-simd-threaded.jsep.wasm` — a file the demo/host doesn't serve, so it
@@ -41,11 +47,23 @@ const REFRACTORY_MS = 1_500;
 let melS: ort.InferenceSession | null = null;
 let embS: ort.InferenceSession | null = null;
 let headS: ort.InferenceSession | null = null;
+/** Optional second head for dual-stage wake (spec: 2026-08-23-dual-stage-wake-confirmation). `null`
+ *  = feature off, and the code below collapses to today's single-head behaviour. */
+let confirmS: ort.InferenceSession | null = null;
 /** Embeddings the trained head expects — `total_length / STEP` at training time (32000 → 16). Read
  *  off the model's own input shape rather than hardcoded, so a head trained with a different window
  *  drops in without a code change. */
 let embWin = 16;
 let bar = 0.5;
+let confirmBar = 0.5;
+/** How long after a primary crossing the confirm head stays armed. FR-7. */
+let confirmWindowMs = 2500;
+/** Worker-clock deadline the confirm head is allowed to run until; `-Infinity` = idle/disarmed. */
+let armedUntilMs = -Infinity;
+/** The primary's score at the moment it armed — carried into the eventual `hit` payload (FR-4). */
+let armedScore = 0;
+/** Confirm-head run() calls, ever. Instrumentation only, for proving FR-3 (FR-3b). */
+let confirmRuns = 0;
 /** Emit every step's score, not just threshold crossings. Bench/demo only — 12.5 msg/s. */
 let verbose = false;
 
@@ -91,15 +109,47 @@ async function pump() {
       if (emb.length < embNeed) continue;
 
       const [score] = await run(headS, Float32Array.from(emb), [1, embWin, EMB_DIM]);
-      if (verbose) post({ type: 'score', score, atMs: clockMs });
+
+      // Dual-stage confirm gate (FR-2 through FR-6). The confirm head's run() sits INSIDE this
+      // branch, structurally — not scored-and-ignored, not scored-and-gated: not executed when
+      // unarmed. Hoisting it out for tidiness would silently turn a gate into a false-fire
+      // generator, since ครับ/ค่ะ-style confirm words are common in ordinary speech (FR-3).
+      if (confirmS) {
+        if (clockMs <= armedUntilMs) {
+          confirmRuns++;
+          const [c] = await run(confirmS, Float32Array.from(emb), [1, embWin, EMB_DIM]);
+          if (verbose) post({ type: 'score', score, atMs: clockMs, confirmRuns });
+          if (c >= confirmBar) {
+            armedUntilMs = -Infinity;
+            lastHitMs = clockMs;
+            post({ type: 'hit', score: armedScore }); // FR-4: the PRIMARY's score, not the confirm's
+          }
+        } else {
+          if (verbose) post({ type: 'score', score, atMs: clockMs, confirmRuns });
+          if (armedUntilMs > -Infinity) { // a finite past deadline just expired — close it once
+            armedUntilMs = -Infinity;
+            post({ type: 'armExpired' });
+          }
+        }
+      } else if (verbose) {
+        post({ type: 'score', score, atMs: clockMs });
+      }
+
       if (score >= bar && clockMs - lastHitMs > REFRACTORY_MS) {
         lastHitMs = clockMs;
-        post({ type: 'hit', score });
+        if (!confirmS) {
+          post({ type: 'hit', score });
+        } else {
+          armedScore = score;
+          armedUntilMs = clockMs + confirmWindowMs;
+          post({ type: 'armed', score });
+        }
       }
     }
   } catch (e) {
     // A run that throws mid-stream would otherwise wedge `pumping` and silently stop detection.
-    melS = embS = headS = null;
+    melS = embS = headS = confirmS = null;
+    armedUntilMs = -Infinity;
     post({ type: 'error', message: e instanceof Error ? e.message : String(e) });
   } finally {
     pumping = false;
@@ -110,7 +160,12 @@ self.onmessage = async ({ data }: MessageEvent) => {
   const msg = data as {
     type: string; wasmBase?: string; melUrl?: string; embUrl?: string; headUrl?: string;
     threshold?: number; verbose?: boolean; f32?: Float32Array;
+    confirmUrl?: string; confirmThreshold?: number; confirmWindowMs?: number;
   };
+
+  const dim = (s: ort.InferenceSession | null) =>
+    (s as unknown as { inputMetadata?: { shape?: (number | string)[] }[] } | null)
+      ?.inputMetadata?.[0]?.shape?.[1];
 
   if (msg.type === 'load') {
     try {
@@ -119,29 +174,47 @@ self.onmessage = async ({ data }: MessageEvent) => {
       ort.env.wasm.numThreads = 1;
       if (msg.wasmBase) ort.env.wasm.wasmPaths = msg.wasmBase;
       bar = msg.threshold ?? bar;
+      confirmBar = msg.confirmThreshold ?? confirmBar;
+      confirmWindowMs = msg.confirmWindowMs ?? confirmWindowMs;
       verbose = msg.verbose === true;
+      // A reused worker (demo model-switch, selfcheck) must not carry armed state into the new
+      // model — dual-stage state is per-load, like everything else here.
+      armedUntilMs = -Infinity;
+      confirmRuns = 0;
       // Release before replacing: a re-load (demo model switch, selfcheck) must not leak the
       // old sessions' wasm memory — enough re-loads and InferenceSession.create starts failing.
-      for (const s of [melS, embS, headS]) void s?.release();
-      melS = embS = headS = null;
+      for (const s of [melS, embS, headS, confirmS]) void s?.release();
+      melS = embS = headS = confirmS = null;
       const opts: ort.InferenceSession.SessionOptions = { executionProviders: ['wasm'] };
-      [melS, embS, headS] = await Promise.all([
+      [melS, embS, headS, confirmS] = await Promise.all([
         ort.InferenceSession.create(msg.melUrl ?? '', opts),
         ort.InferenceSession.create(msg.embUrl ?? '', opts),
         ort.InferenceSession.create(msg.headUrl ?? '', opts),
+        msg.confirmUrl ? ort.InferenceSession.create(msg.confirmUrl, opts) : Promise.resolve(null),
       ]);
-      const dim = (headS as unknown as { inputMetadata?: { shape?: (number | string)[] }[] })
-        .inputMetadata?.[0]?.shape?.[1];
-      if (typeof dim === 'number' && dim > 0) embWin = dim;
+      const headDim = dim(headS);
+      if (typeof headDim === 'number' && headDim > 0) embWin = headDim;
+      // FR-7b: both heads must share one embedding window — `emb` is a single buffer trimmed to
+      // one global `embWin`. A mismatch would feed a wrong-shaped tensor into run() and crash the
+      // stream mid-session; catching it here turns that into a clear load-time error instead.
+      if (confirmS) {
+        const confirmDim = dim(confirmS);
+        if (confirmDim !== embWin) {
+          throw new Error(
+            `confirm head embedding window (${confirmDim}) does not match the primary's (${embWin})`,
+          );
+        }
+      }
       post({ type: 'loaded', window: embWin });
     } catch (e) {
-      melS = embS = headS = null;
+      melS = embS = headS = confirmS = null;
       post({ type: 'error', message: e instanceof Error ? e.message : String(e) });
     }
     return;
   }
 
-  // Live retune from the demo's slider — cheaper than reloading three sessions.
+  // Live retune from the demo's slider — cheaper than reloading three sessions. Confirm's
+  // threshold/window are load-time only (spec: no live retune — see Out of scope).
   if (msg.type === 'config') {
     if (typeof msg.threshold === 'number') bar = msg.threshold;
     if (typeof msg.verbose === 'boolean') verbose = msg.verbose;

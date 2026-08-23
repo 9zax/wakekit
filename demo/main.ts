@@ -42,6 +42,10 @@ const status = $<HTMLDivElement>('status');
 const hitsEl = $<HTMLOListElement>('hits');
 const canvas = $<HTMLCanvasElement>('trace');
 const ctx2d = canvas.getContext('2d')!;
+// Dual-stage wake opt-in. spec: 2026-08-23-dual-stage-wake-confirmation
+const confirmChk = $<HTMLInputElement>('confirm');
+const confirmRow = $<HTMLLabelElement>('confirm-row');
+const confirmHint = $<HTMLParagraphElement>('confirm-hint');
 
 let models: WakeModel[] = [];
 let kit: WakeKit | null = null;
@@ -54,9 +58,23 @@ const TRACE_LEN = 375;
 const trace: number[] = [];
 const hitMarks: number[] = []; // trace indices where a detection fired
 
-// undefined when every manifest entry is still pending — the page must survive that.
+// undefined when every manifest entry is still pending — the page must survive that. A 'confirm'
+// head is never a selectable wake word (FR-11), so both lookups exclude kind === 'confirm'.
 const current = () =>
-  models.find((m) => m.id === modelSel.value && !m.pending) ?? models.find((m) => !m.pending);
+  models.find((m) => m.id === modelSel.value && !m.pending && m.kind !== 'confirm')
+  ?? models.find((m) => !m.pending && m.kind !== 'confirm');
+
+// The first non-pending 'confirm'-kind entry matching a wake model's language, or undefined.
+const confirmFor = (m = current()) =>
+  m && models.find((x) => x.kind === 'confirm' && x.lang === m.lang && !x.pending);
+
+// Show/hide the opt-in row for whatever wake model is currently selected. Hiding it never touches
+// the checkbox's checked state or the stored preference (FR-8) — switching back to a language with
+// a confirm head restores the feature with no re-click.
+function syncConfirmRow() {
+  const has = !!confirmFor();
+  confirmRow.hidden = confirmHint.hidden = !has;
+}
 
 const setStatus = (text: string, cls = '') => { status.textContent = text; status.className = `status ${cls}`; };
 
@@ -83,6 +101,10 @@ const STRINGS = {
     'Thai dictation is not ready — turn Dictation on and add ไทย in System Settings › Keyboard › Dictation, then try again',
     'ยังใช้ถอดเสียงไทยไม่ได้ — เปิด Dictation แล้วเพิ่มภาษาไทยใน System Settings › Keyboard › Dictation แล้วลองใหม่',
   ],
+  // Dual-stage wake (spec: 2026-08-23-dual-stage-wake-confirmation).
+  armed: ['heard the name — say ครับ or ค่ะ', 'ได้ยินชื่อแล้ว — พูด ครับ หรือ ค่ะ ต่อได้เลย'],
+  expired: ['no confirmation — still listening', 'ไม่มีคำยืนยัน — ยังฟังอยู่'],
+  confirmBadge: ['confirmation word', 'คำยืนยัน'],
 } as const;
 const L = (k: keyof typeof STRINGS) => STRINGS[k][document.documentElement.lang === 'th' ? 1 : 0];
 
@@ -188,11 +210,17 @@ function hideWakePill() {
   clearTimeout(pillTimer);
 }
 
-function showWakePill() {
-  pillText.textContent = current()?.label ?? '';
+// Shared visual show — the pill and its orb — split out so the dual-stage "armed" state can reuse
+// it without triggering dictation or the ack (only a CONFIRMED hit does that).
+function showPill(text: string, variant: 'listening' | 'working' = 'listening') {
+  pillText.textContent = text;
   pill.hidden = false; // display:none → block replays the slide-in animation
-  startOrb();
+  startOrb(variant);
   clearTimeout(pillTimer);
+}
+
+function showWakePill() {
+  showPill(current()?.label ?? '');
   // Dictation starts at the hit: Chrome's capture takes 2-6s to reach audiostart (measured), so
   // starting now means the window is open by the time the user speaks.
   startDictation();
@@ -205,6 +233,26 @@ function showWakePill() {
     playWakeChime();
   }
   if (IS_TAURI) void import('@tauri-apps/api/event').then((e) => e.emit('overlay-show'));
+}
+
+// ---- Dual-stage wake — the wake word fired, waiting for the confirmation particle (ครับ/ค่ะ).
+// spec: 2026-08-23-dual-stage-wake-confirmation. All state text goes through #stt-state
+// (setSttState) — the wake pill itself is aria-hidden/decorative, never a live region.
+let activeConfirmWindowMs = 2500;
+
+function onArm() {
+  // Same guard as onHit: an armed prompt must not interrupt an active dictation session or ack.
+  if (dictating || (curAudio && !curAudio.paused && !curAudio.ended)) return;
+  showPill(L('armed'));
+  setSttState(L('armed'));
+  // Backstop only: armExpired normally hides the pill first. Covers the pathological case where
+  // the worker never posts armExpired (e.g. the mic stream stalls).
+  pillTimer = window.setTimeout(hideWakePill, activeConfirmWindowMs + 500);
+}
+
+function onArmExpire() {
+  setSttState(L('expired'));
+  hideWakePill();
 }
 
 // ---- Wake chime — a short synthesized two-note bell instead of a spoken mp3 ack: a voice ack
@@ -856,6 +904,10 @@ async function start() {
   if (!m) return;
   toggle.disabled = true;
   setStatus(L('loading'));
+  // Dual-stage wake: only actually paired when the checkbox is on AND a confirm head exists for
+  // this model's language (FR-8) — a checked-but-hidden checkbox silently runs single-stage.
+  const confirmModel = confirmChk.checked ? confirmFor(m) : undefined;
+  activeConfirmWindowMs = 2500;
   try {
     kit = await WakeKit.load({
       base: BASE,
@@ -863,6 +915,11 @@ async function start() {
       verbose: true,
       onScore,
       onHit,
+      ...(confirmModel ? {
+        confirm: { model: { file: confirmModel.file, threshold: confirmModel.threshold }, windowMs: activeConfirmWindowMs },
+        onArm,
+        onArmExpire,
+      } : {}),
       onError: (msg) => { setStatus(`worker error: ${msg}`, 'error'); void stop(); },
     });
     stopMic = await listenMic(kit, await micDeviceId());
@@ -912,14 +969,23 @@ modelSel.onchange = async () => {
   if (!m) return;
   thr.value = String(m.threshold); // each head ships its own measured bar
   thrVal.textContent = m.threshold.toFixed(3);
+  syncConfirmRow(); // a different model may not have a confirm head for its language (FR-8)
   if (kit) { await stop(); await start(); } // hot-swap: reload with the new head
   draw();
+};
+
+confirmChk.onchange = async () => {
+  localStorage.setItem('wakekit-confirm', confirmChk.checked ? '1' : '0');
+  // confirmUrl only rides the worker's 'load' message — configure() can't add/remove a session,
+  // so toggling always reloads the kit, same as a model switch.
+  if (kit) { await stop(); await start(); }
 };
 
 // ---- boot ----
 try {
   models = await loadManifest(BASE);
   for (const m of models) {
+    if (m.kind === 'confirm') continue; // never a selectable wake word on its own (FR-11)
     const opt = document.createElement('option');
     opt.value = m.id;
     opt.textContent = m.pending ? `${m.label} — ⏳` : `${m.label} — ${m.lang}`;
@@ -935,7 +1001,18 @@ try {
     state.innerHTML = m.pending
       ? '<span class="en">⏳ training…</span><span class="th">⏳ กำลังเทรน…</span>'
       : '<span class="en">✅ ready</span><span class="th">✅ พร้อมใช้</span>';
-    const cells: (string | HTMLElement)[] = [m.label, state, m.lang];
+    let labelCell: string | HTMLElement = m.label;
+    if (m.kind === 'confirm') {
+      // Badge, not a row of its own — a 'confirm' head is a pairing, not a pickable wake word.
+      const wrap = document.createElement('span');
+      wrap.append(m.label);
+      const badge = document.createElement('span');
+      badge.className = 'tag-confirm';
+      badge.innerHTML = '<span class="en">confirmation word</span><span class="th">คำยืนยัน</span>';
+      wrap.append(badge);
+      labelCell = wrap;
+    }
+    const cells: (string | HTMLElement)[] = [labelCell, state, m.lang];
     if (m.pending) {
       cells.push('—', '—', m.note ?? '');
     } else {
@@ -971,6 +1048,8 @@ try {
   }
   // restore the wake word picked last session; current() falls back to the first ready head
   modelSel.value = localStorage.getItem('wakekit-model') ?? '';
+  confirmChk.checked = localStorage.getItem('wakekit-confirm') === '1';
+  syncConfirmRow();
   const ready = current();
   if (ready) {
     modelSel.value = ready.id; // never boot on a disabled (pending) entry

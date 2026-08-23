@@ -74,8 +74,19 @@
             <button id="ack-voice" type="button"><svg viewBox="0 0 24 24" width="1em" height="1em" fill="currentColor" aria-hidden="true"><rect x="2" y="9" width="3" height="6"/><rect x="7" y="5" width="3" height="14"/><rect x="12" y="2" width="3" height="20"/><rect x="17" y="7" width="3" height="10"/></svg> <span class="en">voice</span><span class="th">พูด</span></button>
           </span>
         </label>
+        <!-- Dual-stage wake opt-in — hidden until a 'confirm'-kind head exists for the selected
+             wake model's language. spec: 2026-08-23-dual-stage-wake-confirmation -->
+        <label class="check" id="confirm-row" hidden>
+          <input type="checkbox" id="confirm" aria-describedby="confirm-hint" />
+          <span><span class="en">Require confirmation</span><span class="th">ต้องมีคำยืนยัน</span></span>
+        </label>
         <button id="toggle">▶ Start listening</button>
       </div>
+
+      <p class="hint" id="confirm-hint" hidden>
+        <span class="en">Say the name, then <b>ครับ</b> or <b>ค่ะ</b> within ~2.5 s. Cuts false wakes during long conversations.</span>
+        <span class="th">พูดชื่อ แล้วตามด้วย <b>ครับ</b> หรือ <b>ค่ะ</b> ภายใน ~2.5 วิ ช่วยลดการปลุกผิดตอนคุยยาว ๆ</span>
+      </p>
 
       <div id="status" class="status">idle</div>
       <canvas id="trace" width="900" height="180"></canvas>

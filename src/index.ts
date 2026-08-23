@@ -31,6 +31,12 @@ export type WakeModel = {
   note?: string;
   /** Announced but not trained yet — pickers show it disabled, nothing tries to load it. */
   pending?: boolean;
+  /**
+   * 'confirm' heads are the second stage of a dual-stage wake (spec: 2026-08-23-dual-stage-wake-
+   * confirmation) — never a selectable wake word on their own. Absent means `'wake'`, so every
+   * existing entry is unaffected.
+   */
+  kind?: 'wake' | 'confirm';
   /** Held-out measurement (unseen speakers) behind `threshold` — see scripts/eval.mjs. */
   eval?: {
     /** Held-out voices never trained on. */
@@ -53,8 +59,23 @@ export type WakeKitOptions = {
   wasmBase?: string;
   /** Also emit every 80 ms score via onScore — for meters/benches, not production. */
   verbose?: boolean;
+  /**
+   * Require a second phrase after the wake word (e.g. a confirmation particle) before `onHit`
+   * fires. Omit for today's single-stage behaviour. Load-time only — not retunable via
+   * `configure()`. spec: 2026-08-23-dual-stage-wake-confirmation.
+   */
+  confirm?: {
+    /** A 'confirm'-kind manifest entry, or any {file, threshold} pair. */
+    model: Pick<WakeModel, 'file' | 'threshold'>;
+    /** How long the confirm head listens after the wake word, in ms. Default 2500. */
+    windowMs?: number;
+  };
   /** The wake word was heard (score ≥ threshold, 1.5 s refractory). */
   onHit?: (score: number) => void;
+  /** Dual-stage only: the wake word was heard and the confirm head is now listening. Not a wake. */
+  onArm?: (score: number) => void;
+  /** Dual-stage only: the confirm window closed with no confirmation. No hit followed. */
+  onArmExpire?: () => void;
   /** Every step's score, only when verbose. atMs is audio-consumed time. */
   onScore?: (score: number, atMs: number) => void;
   /** The worker died mid-stream (it does not auto-recover — recreate the kit). */
@@ -95,6 +116,8 @@ export class WakeKit {
         const m = data as { type: string; score?: number; atMs?: number; message?: string };
         if (m.type === 'loaded') resolve(kit);
         else if (m.type === 'hit') opts.onHit?.(m.score ?? 0);
+        else if (m.type === 'armed') opts.onArm?.(m.score ?? 0);
+        else if (m.type === 'armExpired') opts.onArmExpire?.();
         else if (m.type === 'score') opts.onScore?.(m.score ?? 0, m.atMs ?? 0);
         else if (m.type === 'error') {
           opts.onError?.(m.message ?? 'unknown');
@@ -110,6 +133,11 @@ export class WakeKit {
         headUrl: base + opts.model.file,
         threshold: opts.model.threshold,
         verbose: opts.verbose === true,
+        ...(opts.confirm ? {
+          confirmUrl: base + opts.confirm.model.file,
+          confirmThreshold: opts.confirm.model.threshold,
+          confirmWindowMs: opts.confirm.windowMs ?? 2500,
+        } : {}),
       });
     });
   }
